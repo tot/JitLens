@@ -53,13 +53,22 @@ async function captureScreenshot(): Promise<string> {
         throw new Error("No active tab found");
     }
 
-    // Capture the visible tab
-    const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, {
-        format: "jpeg",
-        quality: 80,
-    });
+    try {
+        // Capture the visible tab
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+            format: "png", // Explicitly use PNG format
+        });
 
-    return screenshot;
+        // Verify that we got a valid data URL
+        if (!dataUrl.startsWith("data:image/png;base64,")) {
+            throw new Error("Invalid screenshot format");
+        }
+
+        return dataUrl;
+    } catch (error) {
+        console.error("Screenshot capture error:", error);
+        throw error;
+    }
 }
 
 // chrome.runtime.onStartup.addListener(async () => {

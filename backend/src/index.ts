@@ -16,7 +16,7 @@ app.get(
             onOpen() {
                 console.log("Connection opened on /ws");
             },
-            onMessage(event, ws) {
+            async onMessage(event, ws) {
                 // Check if the message is binary (PCM data) or text (screenshot)
                 if (event.data instanceof ArrayBuffer) {
                     // Handle PCM audio data
@@ -36,9 +36,16 @@ app.get(
                     try {
                         const message = JSON.parse(event.data.toString());
                         if (message.type === 'screenshot') {
-                            console.log('Received screenshot data', message.data);
-                            // Process screenshot...
-                            ws.send('Screenshot received');
+                            console.log("Received screenshot data");
+                            // Extract base64 data from data URL
+                            const base64Data = message.data.replace(/^data:image\/\w+;base64,/, '');
+                            // Convert base64 to buffer
+                            const imageBuffer = Buffer.from(base64Data, 'base64');
+                            
+                            const filename = `screenshot_${Date.now()}.png`;
+                            await Bun.write(filename, imageBuffer);
+                            console.log(`Screenshot saved as ${filename}`);
+                            ws.send("Screenshot saved successfully");
                         }
                     } catch (error) {
                         console.error('Error parsing message:', error);
@@ -47,7 +54,7 @@ app.get(
                 }
             },
             onClose: () => {
-                console.log('Connection closed');
+                console.log("Connection closed");
             },
         }
     })
