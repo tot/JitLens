@@ -113,11 +113,6 @@ class Streaming:
         )
 
         while True:
-            # while not self.audio_transcription_queue.empty():
-            #     packet = await self.audio_transcription_queue.get()
-
-            #     logger.debug("Received packet")
-
             # TODO: Parse from the OpenAI response.
             # https://platform.openai.com/docs/guides/realtime-transcription#realtime-transcription-sessions
             result = await self.openai_realtime_transcription_ws.recv()
@@ -125,11 +120,9 @@ class Streaming:
             # logger.debug("Received result: " + repr(result))
 
             data = json.loads(result)
-            res_data = ""
+
             if data["type"] == "conversation.item.input_audio_transcription.delta":
                 await self.on_transcribed_text_received(data["delta"])
-
-            await self.transcribed_text_queue.put(res_data)
 
     async def handle_tool_call(self, tool_call: dict):
         # Handles the tool call.
@@ -153,8 +146,6 @@ class Streaming:
                     transcribed_text_chunk = await asyncio.wait_for(
                         self.transcribed_text_queue.get(), timeout=self.silence_period_s
                     )
-                    if transcribed_text_chunk == "":
-                        continue
 
                     self.context.add_text(
                         transcribed_text_chunk["text"],
