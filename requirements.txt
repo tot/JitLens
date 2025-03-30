@@ -1,0 +1,4 @@
+websockets
+fastapi
+openai
+Pillow
