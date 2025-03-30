@@ -1,5 +1,7 @@
+import asyncio
 import base64
 import datetime
+import json
 import os
 import threading
 from typing import Generator
@@ -17,33 +19,21 @@ class Context:
     def __init__(
         self,
         log_dir: str,
-        openai_client: openai.OpenAI,
+        openai_client: openai.AsyncOpenAI,
         prompt_history_length_s: float = 30,
         max_finegrained_prompt_length_s: float = 30,
     ):
         self.log_dir = log_dir
-        self.running = False
         self.content_id_counter = 0
-        self.indexing_queue = []
+        self.indexing_queue = asyncio.Queue()
         self.content = []
         self.indexing_thread = None
         self.openai_client = openai_client
         self.prompt_history_length_s = prompt_history_length_s
         self.max_finegrained_prompt_length_s = max_finegrained_prompt_length_s
 
-    def launch(self):
-        self.running = True
-        self.indexing_thread = threading.Thread(target=self._indexing_thread_loop)
-        self.indexing_thread.start()
-
-    def shutdown(self):
-        self.running = False
-        if self.indexing_thread:
-            self.indexing_thread.join()
-        self.indexing_thread = None
-
-    def _create_caption(self, image: PIL.Image.Image) -> str:
-        response = self.openai_client.chat.completions.create(
+    async def _create_caption(self, image: PIL.Image.Image) -> str:
+        response = await self.openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
@@ -70,19 +60,20 @@ class Context:
 
         return caption
 
-    def _indexing_thread_loop(self):
-        while self.running:
+    async def _index_images(self):
+        while True:
+            await self.indexing_queue.get()
             while self.indexing_queue:
-                item = self.indexing_queue.pop(0)
+                item = await self.indexing_queue.get()
                 item["image"].save(f"{self.log_dir}/{item['id']}.png")
 
                 if not os.path.exists(f"{self.log_dir}/{item['index']}_caption.txt"):
-                    caption = self._create_caption(item["image"])
+                    caption = await self._create_caption(item["image"])
                     with open(f"{self.log_dir}/{item['id']}_caption.txt", "w") as f:
                         f.write(caption)
 
     def add_image(self, image: PIL.Image.Image, timestamp: datetime.datetime):
-        self.indexing_queue.append(
+        self.indexing_queue.put_nowait(
             {
                 "type": "image",
                 "role": "user",
@@ -159,8 +150,125 @@ class Context:
         start_time = end_time - datetime.timedelta(seconds=self.prompt_history_length_s)
         return self._construct_finegrained_context(start_time, end_time)
 
+    def _get_caption(self, image_id: str):
+        path = f"{self.log_dir}/{image_id}_caption.txt"
+        if not os.path.exists(path):
+            return None
+        with open(path, "r") as f:
+            return f.read()
+
+    def _construct_coarse_context(self) -> list[ChatCompletionMessageParam]:
+        entries = []
+        for image in self.content:
+            caption = self._get_caption(image["id"])
+            if caption is None:
+                continue
+
+            timestamp_formatted = datetime.datetime.fromtimestamp(
+                image["timestamp"]
+            ).isoformat()
+
+            entries.append(
+                f"Timestamp: {timestamp_formatted}; Image containing: {caption}"
+            )
+
+        return [{"role": "user", "content": "\n".join(entries)}]
+
+    async def _visual_recall(self, query: str, start_timestamp: str):
+        start_time = datetime.datetime.fromisoformat(start_timestamp)
+        end_time = start_time + datetime.timedelta(seconds=5)
+
+        prompt = self._construct_finegrained_context(start_time, end_time)
+        response = await self.openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that can recall information from images.",
+                },
+                *prompt,
+                {
+                    "role": "user",
+                    "content": f"Please help me answer the following question: {repr(query)}",
+                },
+            ],
+        )
+        assert response.choices[0].message.content is not None
+        return response.choices[0].message.content
+
     async def recall(self, query: str):
-        pass
+        response = await self.openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that can recall information from images.",
+                },
+                *self._construct_coarse_context(),
+                {
+                    "role": "user",
+                    "content": f"Please perform the best action you can do answer the following query: {repr(query)}",
+                },
+            ],
+            tool_choice="required",
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "description": "Visually inspects some of the data in the context to help answer the query.",
+                        "name": "visual_recall",
+                        "strict": True,
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "start_timestamp": {
+                                    "type": "string",
+                                    "description": "The timestamp to inspect more closely. Must be of the format 'YYYY-MM-DDTHH:MM:SS'.",
+                                },
+                                "query": {"type": "string"},
+                            },
+                            "required": ["start_timestamp", "query"],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "description": "Directly responds to the query.",
+                        "name": "direct_response",
+                        "strict": True,
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {"response": {"type": "string"}},
+                            "required": ["response"],
+                        },
+                    },
+                },
+            ],
+        )
+        tool_calls = response.choices[0].message.tool_calls
+        assert tool_calls is not None and len(tool_calls) == 1
+
+        tool_call = tool_calls[0]
+        if tool_call.function.name == "visual_recall":
+            arguments = json.loads(tool_call.function.arguments)
+            start_timestamp = arguments["start_timestamp"]
+            query = arguments["query"]
+            result = await self._visual_recall(query, start_timestamp)
+
+            return result
+
+        elif tool_call.function.name == "direct_response":
+            arguments = json.loads(tool_call.function.arguments)
+            response = arguments["response"]
+            return response
+
+        else:
+            raise ValueError(
+                f"Unknown tool call function name: {tool_call.function.name}"
+            )
 
     def _construct_finegrained_context(
         self, start_time: datetime.datetime, end_time: datetime.datetime
