@@ -1,3 +1,19 @@
+// Listen for messages from videoCapture.ts
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === "video_frame") {
+        // Forward the message to all tabs with CallScreen
+        chrome.tabs.query({}, (tabs) => {
+            tabs.forEach((tab) => {
+                // Use Paulgraham website for injecting CallScreen
+                if (tab.id && tab.url?.includes("paulgraham.com")) {
+                    chrome.tabs.sendMessage(tab.id, message);
+                }
+            });
+        });
+    }
+    return true;
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "takeScreenshot") {
         captureScreenshot().then((screenshot) => sendResponse({ success: true, screenshot }));

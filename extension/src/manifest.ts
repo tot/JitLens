@@ -24,6 +24,14 @@ export const manifest: ManifestV3Export = {
         // "chrome://*/*",
         "<all_urls>",
     ],
+    externally_connectable: {
+        matches: [
+            "*://*.messenger.com/*",
+            "*://*.facebook.com/*",
+            "*://*.youtube.com/*",
+            "*://*.paulgraham.com/*",
+        ],
+    },
     content_scripts: [
         {
             matches: ["*://*.paulgraham.com/*"],

@@ -31,13 +31,13 @@ async function captureAndSendVideoFrame() {
         // Convert to base64
         const base64Data = canvas.toDataURL("image/png").split(",")[1];
 
-        // Send to extension via Chrome message
+        // Send message through background script
         chrome.runtime.sendMessage({
             type: "video_frame",
             data: base64Data,
             timestamp: Date.now(),
         });
-        console.log("[JitLens] Video screenshot captured and sent to extension");
+        console.log("[JitLens] Video screenshot sent to background script");
     } catch (err) {
         console.error("[JitLens] Error taking screenshot:", err);
     }
