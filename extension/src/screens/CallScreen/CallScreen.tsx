@@ -52,15 +52,19 @@ const CallScreen = () => {
 
         // Set up message listener for video frames
         const messageListener = (message: any) => {
-            if (message.type === "video_frame" && wsRef.current?.readyState === WebSocket.OPEN) {
-                wsRef.current.send(
-                    JSON.stringify({
-                        type: "image_packet",
-                        data: message.data,
-                        timestamp: message.timestamp,
-                    })
-                );
-                addLog("Forwarded video frame to server");
+            console.log("Received message", message);
+            if (message.type === "video_frame") {
+                console.log("Received video frame", message);
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(
+                        JSON.stringify({
+                            type: "image_packet",
+                            data: message.data,
+                            timestamp: message.timestamp,
+                        })
+                    );
+                    addLog("Forwarded video frame to server");
+                }
             }
         };
 
