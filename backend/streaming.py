@@ -340,6 +340,12 @@ class Streaming:
                 await asyncio.sleep(0.1)
                 continue
 
+            if not self.transcribed_text_queue.empty():
+                # Flush tts_text_queue
+                while self.tts_text_queue.qsize() > 0:
+                    await self.tts_text_queue.get()
+                logger.debug("Flushing tts_text_queue because of new text.")
+
             text = ""
             while not self.tts_text_queue.empty():
                 text += await self.tts_text_queue.get()
@@ -382,11 +388,4 @@ class Streaming:
         while True:
             data = json.loads(await self.cartesia_ws.recv())
             if data["type"] == "chunk":
-                # logger.debug("Received audio chunk")
                 self.pc_cable.write(base64.b64decode(data["data"]))
-            # else:
-            #     logger.info("Data: " + repr(data))
-
-
-if __name__ == "__main__":
-    pass
