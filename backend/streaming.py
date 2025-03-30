@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 from datetime import datetime
+import os
 from loguru import logger
 
 import websockets
@@ -9,8 +10,12 @@ from openai import AsyncOpenAI
 
 from context import Context
 from streaming_openai_util import stream_openai_request_and_accumulate_toolcalls
+from audio_piping import VBcablePlayer
 
 OPENAI_WS_URL = "wss://api.openai.com/v1/realtime?intent=transcription"
+CARTESIA_WS_URL = "wss://api.cartesia.ai/tts/websocket"
+CARTESIA_SAMPLE_RATE = 48000
+CARTESIA_API_KEY = os.environ["CARTESIA_API_KEY"]
 
 
 class Streaming:
@@ -45,16 +50,24 @@ class Streaming:
             },
         )
         self.openai_realtime_transcription_ws = None
+        self.pc_cable = VBcablePlayer(input_sample_rate=CARTESIA_SAMPLE_RATE)
+        self.cartesia_ws = None
 
     async def run(self):
         self.openai_realtime_transcription_ws = (
             await self.openai_realtime_transcription_ws_ctx_manager.__aenter__()
         )
-        task1 = asyncio.create_task(self.transcribe_loop())
-        task2 = asyncio.create_task(self.generate_response_tokens_loop())
-        task3 = asyncio.create_task(self.generate_speech_loop())
-
-        await asyncio.gather(task1, task2, task3)
+        # https://docs.cartesia.ai/2024-11-13/api-reference/tts/tts
+        self.cartesia_ws = await websockets.connect(
+            f"{CARTESIA_WS_URL}?api_key={CARTESIA_API_KEY}&cartesia_version=2024-11-13",
+        )
+        tasks = [
+            asyncio.create_task(self.transcribe_loop()),
+            asyncio.create_task(self.generate_response_tokens_loop()),
+            asyncio.create_task(self.synthesize_speech_loop()),
+            asyncio.create_task(self.playback_speech_loop()),
+        ]
+        await asyncio.gather(*tasks)
 
     async def close(self):
         await asyncio.gather(*self.active_tool_call_tasks)
@@ -117,10 +130,7 @@ class Streaming:
             # https://platform.openai.com/docs/guides/realtime-transcription#realtime-transcription-sessions
             result = await self.openai_realtime_transcription_ws.recv()
 
-            # logger.debug("Received result: " + repr(result))
-
             data = json.loads(result)
-
             if data["type"] == "conversation.item.input_audio_transcription.delta":
                 await self.on_transcribed_text_received(data["delta"])
 
@@ -264,17 +274,70 @@ class Streaming:
                         )
                         break
 
-    async def generate_speech_loop(self):
+    async def synthesize_speech_loop(self):
         logger.info("Starting speech generation loop")
 
-        while not self.tts_text_queue.empty():
-            text = await self.tts_text_queue.get()
+        has_sent_initial_sentence = False
+        minimum_bootstrap_length = 6
 
-            # Send to TTS thing (Cartesia or Eleven Labs)
-            result = ...
+        assert self.cartesia_ws is not None
 
-            # send result to the speaker, so that it gets piped into the PC cable, and then it gets played
-            # and the raybans will receive it
+        while True:
+            if (
+                not has_sent_initial_sentence
+                and self.tts_text_queue.qsize() < minimum_bootstrap_length
+                or self.tts_text_queue.empty()
+            ):
+                # Wait for a while to get some initial text.
+                await asyncio.sleep(0.1)
+                continue
+
+            text = ""
+            while not self.tts_text_queue.empty():
+                text += await self.tts_text_queue.get()
+
+            if text == "":
+                continue
+
+            logger.debug("Received text for TTS: " + repr(text))
+
+            # Send the text to the Cartesia websocket.
+            await self.cartesia_ws.send(
+                json.dumps(
+                    {
+                        "model_id": "sonic-2",
+                        "transcript": text,
+                        "voice": {
+                            "mode": "id",
+                            "id": "a0e99841-438c-4a64-b679-ae501e7d6091",
+                        },
+                        "language": "en",
+                        "context_id": "base-cartesia-context",
+                        "output_format": {
+                            "container": "raw",
+                            "encoding": "pcm_s16le",
+                            "sample_rate": 48000,
+                        },
+                        "add_timestamps": True,
+                        "continue": True,
+                    }
+                )
+            )
+
+            has_sent_initial_sentence = True
+
+    async def playback_speech_loop(self):
+        logger.info("Starting playback loop")
+
+        assert self.cartesia_ws is not None
+
+        while True:
+            data = json.loads(await self.cartesia_ws.recv())
+            if data["type"] == "chunk":
+                logger.debug("Received audio chunk")
+                self.pc_cable.write(base64.b64decode(data["data"]))
+            else:
+                logger.info("Data: " + repr(data))
 
 
 if __name__ == "__main__":
