@@ -30,6 +30,7 @@ class Context:
         self.content_id_counter = 0
         self.indexing_queue = asyncio.Queue()
         self.content = []
+        self.indexing_tasks = []
         self.indexing_thread = None
         self.openai_client = openai_client
         self.prompt_history_length_s = prompt_history_length_s
@@ -74,6 +75,16 @@ class Context:
         return caption
 
     async def _index_images(self):
+        async def _index_image(item):
+            item["image"].save(f"{self.log_dir}/{item['id']}.png")
+
+            if not os.path.exists(f"{self.log_dir}/{item['id']}_caption.txt"):
+                caption = await self._create_caption(item["image"])
+                with open(f"{self.log_dir}/{item['id']}_caption.txt", "w") as f:
+                    f.write(caption)
+
+                logger.info("Created caption")
+
         logger.info("Starting image indexing thread...")
         while True:
             if self.indexing_queue.empty():
@@ -83,14 +94,8 @@ class Context:
             while not self.indexing_queue.empty():
                 logger.info("Indexing image...")
                 item = await self.indexing_queue.get()
-                item["image"].save(f"{self.log_dir}/{item['id']}.png")
-
-                if not os.path.exists(f"{self.log_dir}/{item['id']}_caption.txt"):
-                    caption = await self._create_caption(item["image"])
-                    with open(f"{self.log_dir}/{item['id']}_caption.txt", "w") as f:
-                        f.write(caption)
-
-                    logger.info("Created caption")
+                if item["type"] == "image":
+                    self.indexing_tasks.append(asyncio.create_task(_index_image(item)))
 
     def add_image(self, image: PIL.Image.Image, timestamp: datetime.datetime):
         self.indexing_queue.put_nowait(

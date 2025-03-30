@@ -228,11 +228,17 @@ class Streaming:
                 async for delta in stream_openai_request_and_accumulate_toolcalls(
                     self.openai_client,
                     # TODO: Make a nicer prompt for handling 'background tasks'.
-                    self.context.get_latest_finegrained_context()
+                    [
+                        {
+                            "role": "system",
+                            "content": "You are a helpful assistant who helps a user. You will receive images and text representing what a user sees and says. Please respond to the user accordingly. If you do not receive any images, say 'NO IMAGES'. Please respond in a single sentence, because you will be speaking to the user.",
+                        }
+                    ]
+                    + self.context.get_latest_finegrained_context()
                     + [
                         {
                             "role": "user",
-                            "content": "Please describe briefly what you see.",
+                            "content": "I want to listen to music, but I don't know what I can use to listen to it. Please let me know whenever you see something that might be nice.",
                         }
                     ],
                     model="gpt-4o",
@@ -279,7 +285,7 @@ class Streaming:
                         [
                             {
                                 "role": "system",
-                                "content": "You will receive a stream of images and text representing what a user sees and says. Please respond to the user accordingly. If you do not receive any images, say 'NO IMAGES'.",
+                                "content": "You will receive a stream of images and text representing what a user sees and says. Please respond to the user accordingly. If you do not receive any images, say 'NO IMAGES'. Please respond in a single sentence, because you will be speaking to the user.",
                             },
                             *self.context.get_latest_finegrained_context(),
                         ],

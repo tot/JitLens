@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import datetime
+import os
 import time
 from io import BytesIO
 
@@ -19,7 +20,10 @@ app = FastAPI()
 openai_client = AsyncOpenAI()
 ctx_counter = 0
 
-THINKING_PERIOD_S = 40
+while os.path.exists(f"./context_{ctx_counter}"):
+    ctx_counter += 1
+
+THINKING_PERIOD_S = 5
 SILENCE_PERIOD_S = 1
 
 # context = None
