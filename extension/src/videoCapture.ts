@@ -23,10 +23,17 @@ function connectWebSocket() {
 
 async function captureAndSendVideoFrame() {
     try {
-        // Find video element and capture it using canvas
-        const videoElement = document.querySelector("video");
+        // Find video element with display: block style
+        const videos = document.querySelectorAll("video");
+        const videoElement = Array.from(videos).find((video) => {
+            const style = window.getComputedStyle(video);
+            return style.display === "block";
+        });
+
+        console.log("[JitLens] Video element:", videoElement);
+
         if (!videoElement) {
-            console.warn("[JitLens] No video element found in the page");
+            console.warn("[JitLens] No video element with display:block found in the page");
             return;
         }
 
@@ -69,7 +76,13 @@ connectWebSocket();
 
 // Start capturing frames every 5 seconds when we detect a video element
 const observer = new MutationObserver(() => {
-    if (document.querySelector("video")) {
+    const videos = document.querySelectorAll("video");
+    const hasDisplayBlockVideo = Array.from(videos).some((video) => {
+        const style = window.getComputedStyle(video);
+        return style.display === "block";
+    });
+
+    if (hasDisplayBlockVideo) {
         observer.disconnect();
         setInterval(captureAndSendVideoFrame, 5000);
     }

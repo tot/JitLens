@@ -30,10 +30,10 @@ export const manifest: ManifestV3Export = {
             matches: ["*://*.paulgraham.com/*"],
             js: ["src/contentScript.tsx"],
         },
-        {
-            matches: ["*://*.messenger.com/*", "*://*.facebook.com/messages/*"],
-            js: ["src/contentScript.tsx"],
-        },
+        // {
+        // matches: ["*://*.messenger.com/*", "*://*.facebook.com/messages/*"],
+        // js: ["src/contentScript.tsx"],
+        // },
         {
             matches: [
                 "*://*.messenger.com/groupcall/*",
