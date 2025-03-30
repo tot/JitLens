@@ -1,5 +1,6 @@
 import json
 
+from loguru import logger
 from openai import AsyncOpenAI
 
 
@@ -16,6 +17,7 @@ async def stream_openai_request_and_accumulate_toolcalls(
 ):
     aggregated_tool_calls: dict[int, dict] = {}
     completed_tool_calls = set()
+
     async for chunk in await openai_client.chat.completions.create(
         model=model, messages=messages, stream=True
     ):
@@ -55,4 +57,4 @@ async def stream_openai_request_and_accumulate_toolcalls(
 
         # Check for content.
         if delta.content is not None:
-            yield {"type": "text", "content": delta.content}
+            yield {"type": "text", "text": delta.content}

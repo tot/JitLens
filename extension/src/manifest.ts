@@ -12,16 +12,23 @@ export const manifest: ManifestV3Export = {
     },
     web_accessible_resources: [
         {
-            resources: ["assets/*", "src/audio/*"],
+            resources: ["assets/*", "src/audio/*", "vendor/*", "node_modules/*", "src/*"],
             matches: ["<all_urls>"],
         },
     ],
     host_permissions: [
         "ws://localhost:3000/*",
+        "ws://localhost:8000/*",
         "*://*.youtube.com/*",
         "*://*.messenger.com/*",
         "*://*.facebook.com/*",
         // "chrome://*/*",
         "<all_urls>",
+    ],
+    content_scripts: [
+        {
+            matches: ["*://*.messenger.com/groupcall/*"],
+            js: ["src/contentScript.tsx"],
+        },
     ],
 } as const;

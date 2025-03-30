@@ -2,3 +2,6 @@ websockets
 fastapi
 openai
 Pillow
+python-dotenv
+sounddevice
+scipy

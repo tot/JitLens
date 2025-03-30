@@ -3,8 +3,6 @@ import base64
 import datetime
 import json
 import os
-import threading
-from typing import Generator
 
 import openai
 import PIL.Image
