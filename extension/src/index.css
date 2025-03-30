@@ -1,0 +1,50 @@
+:root {
+    /* font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif; */
+    line-height: 1.5;
+    font-weight: 400;
+
+    color-scheme: light dark;
+    color: rgba(255, 255, 255, 0.87);
+    background-color: #242424;
+
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+#notetion-body {
+    margin: 0;
+    padding: 0;
+}
+
+#notetion-body * {
+    box-sizing: border-box;
+}
+
+#notetion-root {
+    /* display: none;
+    position: fixed; */
+
+    display: flex;
+    place-items: center;
+    width: 320px;
+    height: 400px;
+}
+
+/* #crx-root {
+  position: fixed;
+  top: 3rem;
+  left: 50%;
+  transform: translate(-50%, 0);
+}
+
+#crx-root button {
+  background-color: rgb(239, 239, 239);
+  border-color: rgb(118, 118, 118);
+  border-image: initial;
+  border-style: outset;
+  border-width: 2px;
+  margin: 0;
+  padding: 1px 6px;
+} */

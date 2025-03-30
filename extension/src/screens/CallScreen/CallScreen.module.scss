@@ -1,0 +1,57 @@
+@use "@styles/theme.scss" as theme;
+@use "@styles/components.scss" as components;
+
+.screen {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    flex-direction: column;
+}
+
+.container {
+    padding: 1rem;
+}
+
+.title {
+    color: theme.$text-primary;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+    padding: 0;
+}
+
+.buttonContainer {
+    margin-top: auto;
+    width: 100%;
+    background: theme.$background-white;
+    padding: 1rem;
+}
+
+.button {
+    @extend .buttonRounded;
+    background: black;
+}
+
+.audioContainer {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    height: 200px;
+    overflow-y: auto;
+    background-color: #f5f5f5;
+    font-family: monospace;
+}
+
+.logEntry {
+    margin: 4px 0;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: black;
+}
+
+.error {
+    color: red;
+    margin: 8px 0;
+}
