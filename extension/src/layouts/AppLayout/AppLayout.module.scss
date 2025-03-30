@@ -1,0 +1,17 @@
+@use "@styles/theme.scss" as theme;
+
+.container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    height: 100%;
+    width: 100%;
+    background: theme.$background-white;
+}
+
+.content {
+    display: flex;
+    flex: 1;
+    height: 100%;
+    width: 100%;
+}
