@@ -119,8 +119,15 @@ const CallScreen = () => {
                     const processor = audioContext.createScriptProcessor(4096, 1, 1);
                     processorRef.current = processor;
 
-                    // Connect only source -> processor (don't connect to destination to avoid feedback)
+                    // Create analyzer for audio levels
+                    const analyzer = audioContext.createAnalyser();
+                    analyzer.fftSize = 2048;
+                    analyzer.smoothingTimeConstant = 0.3;
+
+                    // Connect the audio chain: source -> processor -> analyzer
                     source.connect(processor);
+                    processor.connect(audioContext.destination);
+                    source.connect(analyzer);
 
                     // Store WAV configuration
                     wavConfigRef.current = {
@@ -199,21 +206,28 @@ const CallScreen = () => {
                         }
                     };
 
-                    // Create analyzer for audio levels
-                    const analyzer = audioContext.createAnalyser();
-                    processor.connect(analyzer);
-
                     // Log audio levels to verify capture is working
                     const dataArray = new Uint8Array(analyzer.frequencyBinCount);
                     const checkAudio = () => {
-                        analyzer.getByteFrequencyData(dataArray);
-                        const audioLevel = dataArray.reduce((a, b) => a + b) / dataArray.length;
-                        addLog(`Audio Level: ${audioLevel.toFixed(2)}`);
+                        analyzer.getByteTimeDomainData(dataArray);
+                        // Calculate RMS value for better level representation
+                        let sum = 0;
+                        for (let i = 0; i < dataArray.length; i++) {
+                            const amplitude = (dataArray[i] - 128) / 128;
+                            sum += amplitude * amplitude;
+                        }
+                        const rms = Math.sqrt(sum / dataArray.length);
+                        addLog(`Audio Level: ${(rms * 100).toFixed(2)}`);
                     };
-                    setInterval(checkAudio, 1000);
+                    const audioLevelInterval = setInterval(checkAudio, 1000);
 
                     // Store processor reference for cleanup
                     setMediaRecorder(processor as any);
+
+                    // Clean up the interval when stopping
+                    return () => {
+                        clearInterval(audioLevelInterval);
+                    };
                 }
             );
         } catch (err) {
