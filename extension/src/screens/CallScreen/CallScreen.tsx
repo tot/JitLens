@@ -10,6 +10,13 @@ const CallScreen = () => {
     const audioContainerRef = useRef<HTMLDivElement>(null);
     const processorRef = useRef<ScriptProcessorNode | null>(null);
 
+    const addLog = useCallback((message: string) => {
+        setLogs((prevLogs) => [...prevLogs, `[${new Date().toLocaleTimeString()}] ${message}`]);
+        if (audioContainerRef.current) {
+            audioContainerRef.current.scrollTop = audioContainerRef.current.scrollHeight;
+        }
+    }, []);
+
     const connectWebSocket = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             return;
@@ -38,15 +45,32 @@ const CallScreen = () => {
         };
 
         wsRef.current = ws;
-    }, []);
+    }, [addLog]);
 
     useEffect(() => {
         connectWebSocket();
 
+        // Set up message listener for video frames
+        const messageListener = (message: any) => {
+            if (message.type === "video_frame" && wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(
+                    JSON.stringify({
+                        type: "image_packet",
+                        data: message.data,
+                        timestamp: message.timestamp,
+                    })
+                );
+                addLog("Forwarded video frame to server");
+            }
+        };
+
+        chrome.runtime.onMessage.addListener(messageListener);
+
         return () => {
             wsRef.current?.close();
+            chrome.runtime.onMessage.removeListener(messageListener);
         };
-    }, [connectWebSocket]);
+    }, [connectWebSocket, addLog]);
 
     useEffect(() => {
         return () => {
@@ -58,13 +82,6 @@ const CallScreen = () => {
             }
         };
     }, [stream]);
-
-    const addLog = useCallback((message: string) => {
-        setLogs((prevLogs) => [...prevLogs, `[${new Date().toLocaleTimeString()}] ${message}`]);
-        if (audioContainerRef.current) {
-            audioContainerRef.current.scrollTop = audioContainerRef.current.scrollHeight;
-        }
-    }, []);
 
     const startCapture = async () => {
         try {

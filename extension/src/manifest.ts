@@ -17,7 +17,6 @@ export const manifest: ManifestV3Export = {
         },
     ],
     host_permissions: [
-        "ws://localhost:3000/*",
         "ws://localhost:8000/*",
         "*://*.youtube.com/*",
         "*://*.messenger.com/*",

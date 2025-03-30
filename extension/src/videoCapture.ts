@@ -1,26 +1,4 @@
-let wsConnection: WebSocket | null = null;
-
-function connectWebSocket() {
-    if (wsConnection?.readyState === WebSocket.OPEN) {
-        return;
-    }
-
-    wsConnection = new WebSocket("ws://localhost:8000/ws");
-
-    wsConnection.onopen = () => {
-        console.log("[JitLens] WebSocket connection established");
-    };
-
-    wsConnection.onclose = () => {
-        console.log("[JitLens] WebSocket connection closed, attempting to reconnect...");
-        setTimeout(connectWebSocket, 1000);
-    };
-
-    wsConnection.onerror = (error) => {
-        console.error("[JitLens] WebSocket error:", error);
-    };
-}
-
+// Remove WebSocket connection code since we'll use Chrome messaging
 async function captureAndSendVideoFrame() {
     try {
         // Find video element with display: block style
@@ -53,26 +31,17 @@ async function captureAndSendVideoFrame() {
         // Convert to base64
         const base64Data = canvas.toDataURL("image/png").split(",")[1];
 
-        console.log("[JitLens] Base64 data:", base64Data);
-
-        // Send to websocket if connected
-        if (wsConnection?.readyState === WebSocket.OPEN) {
-            wsConnection.send(
-                JSON.stringify({
-                    type: "image_packet",
-                    data: base64Data,
-                    timestamp: Date.now(),
-                })
-            );
-            console.log("[JitLens] Video screenshot captured and sent to server");
-        }
+        // Send to extension via Chrome message
+        chrome.runtime.sendMessage({
+            type: "video_frame",
+            data: base64Data,
+            timestamp: Date.now(),
+        });
+        console.log("[JitLens] Video screenshot captured and sent to extension");
     } catch (err) {
         console.error("[JitLens] Error taking screenshot:", err);
     }
 }
-
-// Initialize WebSocket connection
-connectWebSocket();
 
 // Start capturing frames every 5 seconds when we detect a video element
 const observer = new MutationObserver(() => {
