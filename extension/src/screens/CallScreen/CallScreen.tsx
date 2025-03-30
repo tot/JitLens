@@ -145,7 +145,25 @@ const CallScreen = () => {
                 }
             };
 
+            // Log audio levels
+            const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+            const checkAudio = () => {
+                analyzer.getByteTimeDomainData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                    const amplitude = (dataArray[i] - 128) / 128;
+                    sum += amplitude * amplitude;
+                }
+                const rms = Math.sqrt(sum / dataArray.length);
+                addLog(`Audio Level: ${(rms * 100).toFixed(2)}`);
+            };
+            const audioLevelInterval = setInterval(checkAudio, 1000);
+
             setMediaRecorder(processor as any);
+
+            return () => {
+                clearInterval(audioLevelInterval);
+            };
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : "An unknown error occurred";
             setError(errorMessage);
