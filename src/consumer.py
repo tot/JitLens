@@ -1,11 +1,15 @@
 import asyncio
 import os
 import tempfile
+<<<<<<< HEAD:src/consumer.py
 import wave
 
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+=======
+import os
+>>>>>>> e4b91a1afe327220b2f86265f3079f41e04e05fe:src/client/consumer.py
 
 load_dotenv()
 
