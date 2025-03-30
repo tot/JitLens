@@ -12,25 +12,28 @@ app.get("/", (c) => {
 app.get(
     '/ws',
     upgradeWebSocket((c) => {
+        let audioChunks: Blob[] = [];
+        
         return {
             onOpen() {
                 console.log("Connection opened on /ws");
+                audioChunks = [];
             },
             async onMessage(event, ws) {
-                // Check if the message is binary (PCM data) or text (screenshot)
-                if (event.data instanceof ArrayBuffer) {
-                    // Handle PCM audio data
-                    const pcmData = new Int16Array(event.data);
-                    console.log(`Received PCM audio data, length: ${pcmData.length}`);
+                // Check if the message is binary (audio data) or text (screenshot)
+                if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
+                    // Handle WebM audio chunk
+                    const chunk = event.data instanceof ArrayBuffer ? new Blob([event.data]) : event.data;
+                    audioChunks.push(chunk);
+                    console.log(`Received audio chunk, size: ${chunk.size} bytes`);
                     
-                    // Here you can process the PCM data:
-                    // 1. Save to file
+                    // Here you can:
+                    // 1. Save chunks to file
                     // 2. Forward to another service
-                    // 3. Analyze audio
+                    // 3. Process audio
                     // etc.
                     
-                    // For now, just acknowledge receipt
-                    ws.send('Audio data received');
+                    ws.send('Audio chunk received');
                 } else {
                     // Handle text messages (like screenshots)
                     try {
@@ -55,6 +58,12 @@ app.get(
             },
             onClose: () => {
                 console.log("Connection closed");
+                // Optionally save or process the complete audio recording
+                if (audioChunks.length > 0) {
+                    const completeBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+                    console.log(`Complete audio recording size: ${completeBlob.size} bytes`);
+                    audioChunks = [];
+                }
             },
         }
     })

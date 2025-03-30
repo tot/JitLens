@@ -5,10 +5,9 @@ const CallScreen = () => {
     const [stream, setStream] = useState<MediaStream | null>(null);
     const [error, setError] = useState<string>("");
     const [logs, setLogs] = useState<string[]>([]);
-    const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-    const [workletNode, setWorkletNode] = useState<AudioWorkletNode | null>(null);
-    const audioContainerRef = useRef<HTMLDivElement>(null);
+    const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
+    const audioContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         // Connect to websocket
@@ -31,17 +30,11 @@ const CallScreen = () => {
             if (wsRef.current) {
                 wsRef.current.close();
             }
-            if (workletNode) {
-                workletNode.disconnect();
-            }
-            if (audioContext) {
-                audioContext.close();
-            }
             if (stream) {
                 stream.getTracks().forEach((track) => track.stop());
             }
         };
-    }, [workletNode, audioContext, stream]);
+    }, [stream]);
 
     const addLog = (message: string) => {
         setLogs((prevLogs) => [...prevLogs, `[${new Date().toLocaleTimeString()}] ${message}`]);
@@ -57,22 +50,7 @@ const CallScreen = () => {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab.id || !tab.url) return;
 
-            // if (!tab.url.includes("messenger.com")) {
-            //     setError("Please navigate to messenger.com to capture audio");
-            //     addLog("Error: Not on messenger.com");
-            //     return;
-            // }
-
             addLog("Starting audio capture...");
-
-            // Create a new AudioContext
-            const context = new AudioContext();
-            setAudioContext(context);
-
-            // Load and register our audio worklet
-            await context.audioWorklet.addModule(
-                chrome.runtime.getURL("src/audio/pcm-processor.js")
-            );
 
             // Capture the tab audio
             chrome.tabCapture.capture(
@@ -95,28 +73,28 @@ const CallScreen = () => {
                     setStream(capturedStream);
                     addLog("Successfully captured audio stream");
 
-                    // Create audio source from the captured stream
-                    const source = context.createMediaStreamSource(capturedStream);
+                    // Create MediaRecorder
+                    const recorder = new MediaRecorder(capturedStream, {
+                        mimeType: "audio/webm;codecs=opus",
+                    });
+                    setMediaRecorder(recorder);
 
-                    // Create analyzer for audio levels
-                    const analyzer = context.createAnalyser();
-                    source.connect(analyzer);
-
-                    // Create and connect the worklet node
-                    const node = new AudioWorkletNode(context, "pcm-processor");
-                    setWorkletNode(node);
-                    source.connect(node);
-                    node.connect(context.destination);
-
-                    // Handle PCM data from the worklet
-                    node.port.onmessage = (event) => {
-                        if (
-                            event.data.type === "pcm-data" &&
-                            wsRef.current?.readyState === WebSocket.OPEN
-                        ) {
-                            wsRef.current?.send(event.data.data);
+                    // Handle data available event
+                    recorder.ondataavailable = (event) => {
+                        if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+                            wsRef.current?.send(event.data);
                         }
                     };
+
+                    // Start recording with small time slices for real-time streaming
+                    recorder.start(100); // Send data every 100ms
+                    addLog("Started recording audio");
+
+                    // Create analyzer for audio levels
+                    const audioContext = new AudioContext();
+                    const source = audioContext.createMediaStreamSource(capturedStream);
+                    const analyzer = audioContext.createAnalyser();
+                    source.connect(analyzer);
 
                     // Log audio levels to verify capture is working
                     const dataArray = new Uint8Array(analyzer.frequencyBinCount);
@@ -137,22 +115,18 @@ const CallScreen = () => {
     };
 
     const stopCapture = () => {
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+            mediaRecorder.stop();
+        }
         if (wsRef.current) {
             wsRef.current.close();
             wsRef.current = null;
-        }
-        if (workletNode) {
-            workletNode.disconnect();
-            setWorkletNode(null);
-        }
-        if (audioContext) {
-            audioContext.close();
-            setAudioContext(null);
         }
         if (stream) {
             stream.getTracks().forEach((track) => track.stop());
             setStream(null);
         }
+        setMediaRecorder(null);
         addLog("Audio capture stopped");
     };
 

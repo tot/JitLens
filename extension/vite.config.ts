@@ -21,21 +21,6 @@ export default defineConfig({
             "@styles": resolve(__dirname, "src/styles"),
         },
     },
-    build: {
-        rollupOptions: {
-            input: {
-                "main": resolve(__dirname, "index.html"),
-                "pcm-processor": resolve(__dirname, "src/audio/pcm-processor.ts"),
-            },
-            output: {
-                entryFileNames: (chunkInfo) => {
-                    return chunkInfo.name === "pcm-processor"
-                        ? "src/audio/[name].js"
-                        : "assets/[name]-[hash].js";
-                },
-            },
-        },
-    },
     plugins: [
         // @ts-expect-error babel property is not defined but necessary per Jotai documentation
         react({ babel: { plugins: [jotaiDebugLabel, jotaiReactRefresh] } }),
