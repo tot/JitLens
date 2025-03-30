@@ -109,6 +109,14 @@ const CallScreen = () => {
                     const inputData = e.inputBuffer.getChannelData(0);
                     const pcm16Data = new Int16Array(inputData.length);
 
+                    // Calculate RMS sound level
+                    let sum = 0;
+                    for (let i = 0; i < inputData.length; i++) {
+                        sum += inputData[i] * inputData[i];
+                    }
+                    const rms = Math.sqrt(sum / inputData.length);
+                    const soundLevel = (rms * 100).toFixed(2);
+
                     // Convert to 16-bit PCM with dithering
                     for (let i = 0; i < inputData.length; i++) {
                         const dither = (Math.random() * 2 - 1) * 0.0001;
@@ -125,36 +133,19 @@ const CallScreen = () => {
                         String.fromCharCode.apply(null, Array.from(fullWavData))
                     );
 
-                    // Send the audio packet
+                    // Send the audio packet with sound level
                     wsRef.current.send(
                         JSON.stringify({
                             type: "audio_packet",
                             timestamp: Date.now(),
                             data: base64Data,
+                            sound_level: parseFloat(soundLevel),
                         })
                     );
                 }
             };
 
-            // Log audio levels
-            const dataArray = new Uint8Array(analyzer.frequencyBinCount);
-            const checkAudio = () => {
-                analyzer.getByteTimeDomainData(dataArray);
-                let sum = 0;
-                for (let i = 0; i < dataArray.length; i++) {
-                    const amplitude = (dataArray[i] - 128) / 128;
-                    sum += amplitude * amplitude;
-                }
-                const rms = Math.sqrt(sum / dataArray.length);
-                addLog(`Audio Level: ${(rms * 100).toFixed(2)}`);
-            };
-            const audioLevelInterval = setInterval(checkAudio, 1000);
-
             setMediaRecorder(processor as any);
-
-            return () => {
-                clearInterval(audioLevelInterval);
-            };
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : "An unknown error occurred";
             setError(errorMessage);
