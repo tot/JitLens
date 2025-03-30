@@ -2,6 +2,7 @@ import base64
 import datetime
 import os
 import threading
+from typing import Generator
 
 import openai
 import PIL.Image
@@ -29,8 +30,6 @@ class Context:
         self.openai_client = openai_client
         self.prompt_history_length_s = prompt_history_length_s
         self.max_finegrained_prompt_length_s = max_finegrained_prompt_length_s
-        self.inflight_requests = {}
-        self.inflight_request_counter = 0
 
     def launch(self):
         self.running = True
@@ -109,7 +108,47 @@ class Context:
                 "type": "text",
                 "role": "user",
                 "text": speech,
-                "index": self.content_id_counter,
+                "id": self.content_id_counter,
+                "timestamp": timestamp.timestamp(),
+            }
+        )
+        self.content_id_counter += 1
+
+    def add_function_call_request(
+        self,
+        name: str,
+        parameters: dict,
+        tool_call_id: str,
+        timestamp: datetime.datetime,
+    ):
+        self.content.append(
+            {
+                "type": "function_call_request",
+                "role": "assistant",
+                "name": name,
+                "parameters": parameters,
+                "id": self.content_id_counter,
+                "tool_call_id": tool_call_id,
+                "timestamp": timestamp.timestamp(),
+            }
+        )
+        self.content_id_counter += 1
+
+    def add_function_call_response(
+        self,
+        tool_call_id: str,
+        response_structured: dict,
+        response_formatted: str,
+        timestamp: datetime.datetime,
+    ):
+        self.content.append(
+            {
+                "type": "function_call_response",
+                "role": "assistant",
+                "response_structured": response_structured,
+                "response_formatted": response_formatted,
+                "id": self.content_id_counter,
+                "tool_call_id": tool_call_id,
                 "timestamp": timestamp.timestamp(),
             }
         )
@@ -128,11 +167,14 @@ class Context:
 
         prompt: list[ChatCompletionMessageParam] = []
         for item in self.content:
-            if (
+            if not (
                 item["timestamp"] >= start_time.timestamp()
                 and item["timestamp"] <= end_time.timestamp()
             ):
-                if item["type"] == "image":
+                continue
+
+            match item["type"]:
+                case "image":
                     prompt.append(
                         {
                             "role": item["role"],  # This can only be 'user'.
@@ -146,12 +188,31 @@ class Context:
                             ],
                         }
                     )
-                elif item["type"] == "text":
+                case "text":
                     prompt.append(
                         {
                             "role": item["role"],
-                            "content": item["text"],
+                            "content": [
+                                {"type": "text", "text": item["text"]},
+                            ],
                         }
                     )
-                elif item["type"] == "function_call":
-                    pass
+                case "function_call_request":
+                    prompt.append(
+                        {
+                            "role": item["role"],
+                            "content": [
+                                {"type": "text", "text": item["text"]},
+                            ],
+                        }
+                    )
+                case "function_call_response":
+                    prompt.append(
+                        {
+                            "role": item["role"],
+                            "content": item["response_formatted"],
+                            "tool_call_id": item["tool_call_id"],
+                        }
+                    )
+                case _:
+                    raise ValueError(f"Unknown content type: {item['type']}")
