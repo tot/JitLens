@@ -4,7 +4,6 @@ import datetime
 import os
 from io import BytesIO
 
-import websockets
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from openai import AsyncOpenAI
@@ -44,32 +43,24 @@ async def websocket_endpoint(websocket: WebSocket):
     ctx_counter += 1
     context = Context(log_dir, openai_client)
 
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "OpenAI-Beta": "realtime=v1",
-    }
+    streaming = Streaming(context, openai_client)
+    await websocket.accept()
+    streaming_task = asyncio.create_task(streaming.run())
+    try:
+        while True:
+            message = await websocket.receive_json()
+            match message["type"]:
+                case "audio_packet":
+                    await streaming.on_audio_packet_received(message["data"])
+                case "image_packet":
+                    image = base64_to_pil(message["data"])
+                    if image is None:
+                        raise ValueError("Invalid image.")
 
-    async with websockets.connect(OPENAI_WS_URL, extra_headers=headers) as ws:
-        streaming = Streaming(
-            context, openai_client, openai_realtime_transcription_ws=ws
-        )
-        await websocket.accept()
-        streaming_task = asyncio.create_task(streaming.run())
-        try:
-            while True:
-                message = await websocket.receive_json()
-                match message["type"]:
-                    case "audio_packet":
-                        await streaming.on_audio_packet_received(message["data"])
-                    case "image_packet":
-                        image = base64_to_pil(message["data"])
-                        if image is None:
-                            raise ValueError("Invalid image.")
-
-                        context.add_image(image, datetime.datetime.now())
-                    case _:
-                        print("Wrong type")
-        except WebSocketDisconnect:
-            print("WebSocket disconnected")
-            await streaming.join_remaining_tasks()
-            streaming_task.cancel()
+                    context.add_image(image, datetime.datetime.now())
+                case _:
+                    print("Wrong type")
+    except WebSocketDisconnect:
+        print("WebSocket disconnected")
+        await streaming.close()
+        streaming_task.cancel()

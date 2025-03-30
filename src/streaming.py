@@ -1,11 +1,13 @@
 import asyncio
 from datetime import datetime
 
+import websockets
 from openai import AsyncOpenAI
 
 from context import Context
 from streaming_openai_util import stream_openai_request_and_accumulate_toolcalls
-import websockets
+
+OPENAI_WS_URL = "wss://api.openai.com/v1/realtime?intent=transcription"
 
 
 class Streaming:
@@ -13,7 +15,6 @@ class Streaming:
         self,
         context: Context,
         openai_client: AsyncOpenAI,
-        openai_realtime_transcription_ws: websockets.ClientConnection,
         silence_period_s: float = 5,
         thinking_period_s: float = 5,
     ):
@@ -33,17 +34,30 @@ class Streaming:
         self.last_text_received_timestamp = datetime.now()
         self.last_user_query_request_timestamp = datetime.now()
         self.last_background_request_timestamp = datetime.now()
-        self.openai_realtime_transcription_ws = openai_realtime_transcription_ws
+        self.openai_realtime_transcription_ws_ctx_manager = websockets.connect(
+            OPENAI_WS_URL,
+            extra_headers={
+                "Authorization": f"Bearer {openai_client.api_key}",
+                "OpenAI-Beta": "realtime=v1",
+            },
+        )
+        self.openai_realtime_transcription_ws = None
 
     async def run(self):
+        self.openai_realtime_transcription_ws = (
+            await self.openai_realtime_transcription_ws_ctx_manager.__aenter__()
+        )
         task1 = asyncio.create_task(self.process_audio_packets_loop())
         task2 = asyncio.create_task(self.generate_response_tokens_loop())
         task3 = asyncio.create_task(self.generate_speech_loop())
 
         await asyncio.gather(task1, task2, task3)
 
-    async def join_remaining_tasks(self):
+    async def close(self):
         await asyncio.gather(*self.active_tool_call_tasks)
+        await self.openai_realtime_transcription_ws_ctx_manager.__aexit__(
+            None, None, None
+        )
 
     async def on_audio_packet_received(self, packet_data: bytes):
         await self.audio_transcription_queue.put(packet_data)
@@ -52,6 +66,8 @@ class Streaming:
         await self.transcribed_text_queue.put(result)
 
     async def process_audio_packets_loop(self):
+        assert self.openai_realtime_transcription_ws
+
         while True:
             packet = await self.audio_transcription_queue.get()
 
@@ -184,3 +200,7 @@ class Streaming:
 
             # send result to the speaker, so that it gets piped into the PC cable, and then it gets played
             # and the raybans will receive it
+
+
+if __name__ == "__main__":
+    pass
