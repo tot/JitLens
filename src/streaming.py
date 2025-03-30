@@ -32,6 +32,13 @@ class Streaming:
         self.last_user_query_request_timestamp = datetime.now()
         self.last_background_request_timestamp = datetime.now()
 
+    async def run(self):
+        task1 = asyncio.create_task(self.process_audio_packets_loop())
+        task2 = asyncio.create_task(self.generate_response_tokens_loop())
+        task3 = asyncio.create_task(self.generate_speech_loop())
+
+        await asyncio.gather(task1, task2, task3)
+
     async def join_remaining_tasks(self):
         await asyncio.gather(*self.active_tool_call_tasks)
 
@@ -169,3 +176,8 @@ class Streaming:
 
             # send result to the speaker, so that it gets piped into the PC cable, and then it gets played
             # and the raybans will receive it
+
+
+openai_client = AsyncOpenAI()
+context = Context(log_dir="./context", openai_client=openai_client)
+streaming = Streaming(context, openai_client)
