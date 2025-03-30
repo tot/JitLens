@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import datetime
 from loguru import logger
 
@@ -82,6 +83,7 @@ class Streaming:
             # TODO: Parse from the OpenAI response.
             # https://platform.openai.com/docs/guides/realtime-transcription#realtime-transcription-sessions
             result = await self.openai_realtime_transcription_ws.recv()
+            parsed_result = json.loads(result) # Into a dictionary
 
             await self.on_transcribed_text_received(text=str(result))
 
