@@ -47,16 +47,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function captureScreenshot(): Promise<string> {
-    // Get the active tab and window
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab.id || !tab.windowId) {
-        throw new Error("No active tab found");
+    // Find all tabs that match messenger.com
+    const tabs = await chrome.tabs.query({
+        url: ["*://*.messenger.com/*", "*://*.facebook.com/messages/*"],
+    });
+
+    // Find the tab that's specifically in a call (has video elements)
+    let messengerTab = null;
+    for (const tab of tabs) {
+        if (!tab.id) continue;
+
+        try {
+            // Inject a script to check for video elements
+            const [hasVideoCall] = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: () => {
+                    const videoElements = document.querySelectorAll("video");
+                    return videoElements.length > 0;
+                },
+            });
+
+            if (hasVideoCall?.result) {
+                messengerTab = tab;
+                break;
+            }
+        } catch (error) {
+            console.error(`Error checking tab ${tab.id}:`, error);
+        }
+    }
+
+    if (!messengerTab?.id || !messengerTab.windowId) {
+        throw new Error("No active Messenger video call found. Please make sure you're in a call.");
     }
 
     try {
-        // Capture the visible tab
-        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-            format: "png", // Explicitly use PNG format
+        // Capture the messenger tab
+        const dataUrl = await chrome.tabs.captureVisibleTab(messengerTab.windowId, {
+            format: "png",
         });
 
         // Verify that we got a valid data URL
