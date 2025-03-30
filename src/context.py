@@ -154,6 +154,11 @@ class Context:
         )
         self.content_id_counter += 1
 
+    def get_latest_context(self):
+        end_time = datetime.datetime.now()
+        start_time = end_time - datetime.timedelta(seconds=self.prompt_history_length_s)
+        return self._construct_finegrained_prompt(start_time, end_time)
+
     def _construct_finegrained_prompt(
         self, start_time: datetime.datetime, end_time: datetime.datetime
     ):
@@ -175,6 +180,16 @@ class Context:
 
             match item["type"]:
                 case "image":
+                    # Squeeze consecutive messages from same role into one.
+                    if len(prompt) > 0 and prompt[-1]["role"] == item["role"]:
+                        prompt[-1]["content"].append(  # type: ignore
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": _image_to_base64(item["image"])},
+                            }
+                        )
+                        continue
+
                     prompt.append(
                         {
                             "role": item["role"],  # This can only be 'user'.
@@ -189,6 +204,18 @@ class Context:
                         }
                     )
                 case "text":
+                    if len(prompt) > 0:
+                        if prompt[-1]["role"] == item["role"]:
+                            if prompt[-1]["content"][0]["type"] == "text":  # type: ignore
+                                # Concatenate consecutive text messages into one.
+                                prompt[-1]["content"][0]["text"] += item["text"]  # type: ignore
+                            else:
+                                # Append text content piece to the last message.
+                                prompt[-1]["content"].append(  # type: ignore
+                                    {"type": "text", "text": item["text"]}
+                                )
+                            continue
+
                     prompt.append(
                         {
                             "role": item["role"],
@@ -216,3 +243,5 @@ class Context:
                     )
                 case _:
                     raise ValueError(f"Unknown content type: {item['type']}")
+
+        return prompt
