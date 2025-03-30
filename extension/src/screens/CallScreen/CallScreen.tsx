@@ -68,9 +68,6 @@ const CallScreen = () => {
 
     const startCapture = async () => {
         try {
-            // const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            // if (!tab.id || !tab.url) return;
-
             addLog("Starting audio capture...");
 
             const capturedStream = await navigator.mediaDevices.getDisplayMedia({
@@ -200,47 +197,6 @@ const CallScreen = () => {
         setLogs([]);
     };
 
-    const takeAndSendScreenshot = useCallback(async () => {
-        try {
-            addLog("Taking screenshot...");
-            chrome.runtime.sendMessage({ type: "takeScreenshot" }, (response) => {
-                if (chrome.runtime.lastError) {
-                    const error = chrome.runtime.lastError.message || "Unknown error";
-                    setError(error);
-                    addLog(`Screenshot error: ${error}`);
-                    return;
-                }
-
-                if (response.success) {
-                    wsRef?.current?.send(
-                        JSON.stringify({
-                            type: "image_packet",
-                            data: response.screenshot,
-                            timestamp: Date.now(),
-                        })
-                    );
-                    addLog("Screenshot captured and sent to server");
-                } else {
-                    const error = response.error || "Failed to capture screenshot";
-                    setError(error);
-                    addLog(`Screenshot error: ${error}`);
-                }
-            });
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : "An unknown error occurred";
-            setError(errorMessage);
-            addLog(`Screenshot error: ${errorMessage}`);
-            console.error("Error taking screenshot:", err);
-        }
-    }, [addLog]);
-
-    useEffect(() => {
-        const intervalId = setInterval(takeAndSendScreenshot, 5000);
-        return () => {
-            clearInterval(intervalId);
-        };
-    });
-
     return (
         <div className={styles.screen}>
             <div className={styles.container}>
@@ -248,7 +204,6 @@ const CallScreen = () => {
                 <button onClick={stopCapture}>Stop Audio Capture</button>
                 <button onClick={clearError}>Clear Error</button>
                 <button onClick={clearLogs}>Clear Logs</button>
-                <button onClick={takeAndSendScreenshot}>Take Screenshot</button>
 
                 {stream && <div>Audio capture active!</div>}
                 {error && <div className={styles.error}>{error}</div>}
