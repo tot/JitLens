@@ -77,15 +77,20 @@ class Streaming:
         while True:
             packet = await self.audio_transcription_queue.get()
 
-            # TODO: Put in the JSON format that OpenAI expects.
-            await self.openai_realtime_transcription_ws.send(packet)
+            await self.openai_realtime_transcription_ws.send({
+                "type": "input_audio_buffer.append",
+                "audio": packet
+            })
 
             # TODO: Parse from the OpenAI response.
             # https://platform.openai.com/docs/guides/realtime-transcription#realtime-transcription-sessions
             result = await self.openai_realtime_transcription_ws.recv()
-            parsed_result = json.loads(result)  # Into a dictionary
+            data = json.loads(result)
+            res_data = ""
+            if data["type"] == "response.output_text.delta":
+                await self.on_transcription_result_received(data["delta"])
 
-            await self.on_transcribed_text_received(text=str(result))
+            await self.transcribed_text_queue.put(res_data)
 
     async def handle_tool_call(self, tool_call: dict):
         # Handles the tool call.
