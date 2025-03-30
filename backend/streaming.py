@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import datetime
 
 import websockets
@@ -77,6 +78,7 @@ class Streaming:
             # TODO: Parse from the OpenAI response.
             # https://platform.openai.com/docs/guides/realtime-transcription#realtime-transcription-sessions
             result = await self.openai_realtime_transcription_ws.recv()
+            parsed_result = json.loads(result) # Into a dictionary
 
             await self.transcribed_text_queue.put(result)
 
