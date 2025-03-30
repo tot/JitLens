@@ -73,42 +73,59 @@ const CallScreen = () => {
                     setStream(capturedStream);
                     addLog("Successfully captured audio stream");
 
-                    // Create MediaRecorder
-                    const recorder = new MediaRecorder(capturedStream, {
-                        mimeType: "audio/wav",
-                        audioBitsPerSecond: 16000,
-                    });
-                    setMediaRecorder(recorder);
-
-                    // Set up audio context with specific settings for high-quality capture
-                    const audioContext = new AudioContext({
-                        sampleRate: 16000,
-                    });
+                    // Create audio context with original sample rate for better quality
+                    const audioContext = new AudioContext();
                     const source = audioContext.createMediaStreamSource(capturedStream);
-                    const destination = audioContext.createMediaStreamDestination();
 
-                    // Create a gain node to control volume
-                    const gainNode = audioContext.createGain();
-                    gainNode.gain.value = 1.0;
+                    // Log the actual sample rate
+                    addLog(`Audio context sample rate: ${audioContext.sampleRate}Hz`);
 
-                    // Connect the audio nodes
-                    source.connect(gainNode);
-                    gainNode.connect(destination);
+                    // Create a ScriptProcessorNode for raw PCM data
+                    const processor = audioContext.createScriptProcessor(2048, 1, 1);
 
-                    // Handle data available event
-                    recorder.ondataavailable = async (event) => {
-                        if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
-                            wsRef.current?.send(event.data);
+                    // Connect only source -> processor (don't connect to destination to avoid feedback)
+                    source.connect(processor);
+
+                    // Handle audio processing
+                    processor.onaudioprocess = (e) => {
+                        if (wsRef.current?.readyState === WebSocket.OPEN) {
+                            // Get PCM data from input channel
+                            const inputData = e.inputBuffer.getChannelData(0);
+
+                            // Convert Float32Array to Int16Array (PCM16) with better scaling
+                            const pcm16Data = new Int16Array(inputData.length);
+                            for (let i = 0; i < inputData.length; i++) {
+                                // Improved conversion with proper scaling and dithering
+                                const sample = inputData[i];
+                                // Add small amount of dither noise to reduce quantization effects
+                                const dither = (Math.random() * 2 - 1) * 0.1;
+                                const scaled = (sample + dither) * 32768.0;
+                                // Proper rounding and clamping
+                                pcm16Data[i] = Math.max(
+                                    -32768,
+                                    Math.min(32767, Math.round(scaled))
+                                );
+                            }
+
+                            // Send audio data with sample rate info
+                            const message = {
+                                type: "audio",
+                                sampleRate: audioContext.sampleRate,
+                                data: pcm16Data.buffer,
+                            };
+                            wsRef.current.send(
+                                JSON.stringify({
+                                    type: "audio_info",
+                                    sampleRate: audioContext.sampleRate,
+                                })
+                            );
+                            wsRef.current.send(pcm16Data.buffer);
                         }
                     };
 
-                    // Start recording with small time slices for real-time streaming
-                    recorder.start(100); // Send data every 100ms
-                    addLog("Started recording audio");
-
-                    // Create analyzer for audio levels
+                    // Create analyzer for audio levels (after processor to monitor processed audio)
                     const analyzer = audioContext.createAnalyser();
-                    source.connect(analyzer);
+                    processor.connect(analyzer);
 
                     // Log audio levels to verify capture is working
                     const dataArray = new Uint8Array(analyzer.frequencyBinCount);
@@ -118,6 +135,9 @@ const CallScreen = () => {
                         addLog(`Audio Level: ${audioLevel.toFixed(2)}`);
                     };
                     setInterval(checkAudio, 1000);
+
+                    // Store processor reference for cleanup
+                    setMediaRecorder(processor as any);
                 }
             );
         } catch (err) {
