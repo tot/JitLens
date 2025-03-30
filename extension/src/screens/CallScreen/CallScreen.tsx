@@ -75,12 +75,28 @@ const CallScreen = () => {
 
                     // Create MediaRecorder
                     const recorder = new MediaRecorder(capturedStream, {
-                        mimeType: "audio/webm;codecs=opus",
+                        mimeType: "audio/wav",
+                        audioBitsPerSecond: 16000,
                     });
                     setMediaRecorder(recorder);
 
+                    // Set up audio context with specific settings for high-quality capture
+                    const audioContext = new AudioContext({
+                        sampleRate: 16000,
+                    });
+                    const source = audioContext.createMediaStreamSource(capturedStream);
+                    const destination = audioContext.createMediaStreamDestination();
+
+                    // Create a gain node to control volume
+                    const gainNode = audioContext.createGain();
+                    gainNode.gain.value = 1.0;
+
+                    // Connect the audio nodes
+                    source.connect(gainNode);
+                    gainNode.connect(destination);
+
                     // Handle data available event
-                    recorder.ondataavailable = (event) => {
+                    recorder.ondataavailable = async (event) => {
                         if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
                             wsRef.current?.send(event.data);
                         }
@@ -91,8 +107,6 @@ const CallScreen = () => {
                     addLog("Started recording audio");
 
                     // Create analyzer for audio levels
-                    const audioContext = new AudioContext();
-                    const source = audioContext.createMediaStreamSource(capturedStream);
                     const analyzer = audioContext.createAnalyser();
                     source.connect(analyzer);
 

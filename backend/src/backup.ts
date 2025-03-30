@@ -4,7 +4,6 @@ import type { ServerWebSocket } from "bun";
 import { spawn } from "bun";
 import { join } from "path";
 import { mkdir, rm } from "fs/promises";
-import { Readable } from "stream";
 
 const app = new Hono();
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
@@ -13,13 +12,82 @@ const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
 const TEMP_DIR = "./temp";
 mkdir(TEMP_DIR).catch(() => {});
 
-// WAV header size in bytes
-const WAV_HEADER_SIZE = 44;
+// Convert WebM to PCM16 using FFmpeg
+async function convertToPCM16(inputBuffer: Buffer): Promise<Buffer> {
+    const tempInput = join(TEMP_DIR, `input_${Date.now()}.webm`);
+    const tempOutput = join(TEMP_DIR, `output_${Date.now()}.raw`);
 
-// Function to convert WAV buffer to PCM16
-function wavToPcm16(wavBuffer: Buffer): Buffer {
-    // Skip WAV header and return raw PCM data
-    return wavBuffer.subarray(WAV_HEADER_SIZE);
+    try {
+        // Write input buffer to temp file
+        await Bun.write(tempInput, inputBuffer);
+
+        // Run FFmpeg conversion
+        const ffmpeg = spawn([
+            "ffmpeg",
+            "-i", tempInput,
+            "-f", "s16le",  // PCM 16-bit little-endian
+            "-acodec", "pcm_s16le",
+            "-ar", "16000", // 16kHz sample rate
+            "-ac", "1",     // mono
+            tempOutput
+        ], {
+            stderr: "pipe"
+        });
+
+        const output = await ffmpeg.exited;
+        
+        if (output !== 0) {
+            const stderrOutput = await new Response(ffmpeg.stderr).text();
+            throw new Error(`FFmpeg conversion failed: ${stderrOutput}`);
+        }
+
+        // Read the converted PCM data
+        const pcmData = await Bun.file(tempOutput).arrayBuffer();
+        return Buffer.from(pcmData);
+    } finally {
+        // Cleanup temp files
+        await Promise.all([
+            rm(tempInput).catch(() => {}),
+            rm(tempOutput).catch(() => {})
+        ]);
+    }
+}
+
+// Convert WebM to G711 µ-law using FFmpeg
+async function convertToG711ULaw(inputBuffer: Buffer): Promise<Buffer> {
+    const tempInput = join(TEMP_DIR, `input_${Date.now()}.webm`);
+    const tempOutput = join(TEMP_DIR, `output_${Date.now()}.ul`);
+
+    try {
+        await Bun.write(tempInput, inputBuffer);
+
+        const ffmpeg = spawn([
+            "ffmpeg",
+            "-i", tempInput,
+            "-f", "mulaw",
+            "-acodec", "pcm_mulaw",
+            "-ar", "8000", // G.711 uses 8kHz
+            "-ac", "1",    // mono
+            tempOutput
+        ], {
+            stderr: "pipe"
+        });
+
+        const output = await ffmpeg.exited;
+        
+        if (output !== 0) {
+            const stderrOutput = await new Response(ffmpeg.stderr).text();
+            throw new Error(`FFmpeg conversion failed: ${stderrOutput}`);
+        }
+
+        const ulawData = await Bun.file(tempOutput).arrayBuffer();
+        return Buffer.from(ulawData);
+    } finally {
+        await Promise.all([
+            rm(tempInput).catch(() => {}),
+            rm(tempOutput).catch(() => {})
+        ]);
+    }
 }
 
 app.get("/", (c) => {
@@ -47,8 +115,10 @@ app.get(
                             event.data
                         );
                         
-                        // Convert WAV chunk to PCM16
-                        const pcmChunk = wavToPcm16(chunk);
+                        // Convert the chunk to PCM16
+                        const pcmChunk = await convertToPCM16(chunk);
+                        // Alternatively, use G.711 µ-law:
+                        // const ulawChunk = await convertToG711ULaw(chunk);
                         
                         // Store the converted chunk
                         audioChunks.push(pcmChunk);
