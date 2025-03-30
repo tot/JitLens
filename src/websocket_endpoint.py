@@ -71,11 +71,15 @@ async def websocket_endpoint(websocket: WebSocket, context: Context):
                             case "audio_packet":
                                 curr_stream.enqueue_audio_packet(message["data"])
                             case "image_packet":
-                                context.add_image(
-                                    base64_to_pil(
+                                conv_image=base64_to_pil(
                                         message["data"], datetime.datetime.now()
                                     )
-                                )
+                                if conv_image:
+                                    context.add_image(
+                                        conv_image
+                                    )
+                                else:
+                                    print("Failed image conversion")
                             case _:
                                 print("Wrong type")
                     except json.JSONDecodeError:
