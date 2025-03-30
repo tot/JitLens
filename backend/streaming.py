@@ -83,7 +83,7 @@ class Streaming:
             # TODO: Parse from the OpenAI response.
             # https://platform.openai.com/docs/guides/realtime-transcription#realtime-transcription-sessions
             result = await self.openai_realtime_transcription_ws.recv()
-            parsed_result = json.loads(result) # Into a dictionary
+            parsed_result = json.loads(result)  # Into a dictionary
 
             await self.on_transcribed_text_received(text=str(result))
 
@@ -124,7 +124,7 @@ class Streaming:
             except asyncio.TimeoutError:
                 # If there was a timeout, it means that the silence period has been reached,
                 # and we are OK to send a request to OpenAI.
-                logger.debug("Silence period reached, sending request to OpenAI")
+                logger.debug("Silence period reached.")
                 pass
 
             # Don't make another request if we haven't received any new text since the previous request.
@@ -141,6 +141,7 @@ class Streaming:
             ).total_seconds() < self.thinking_period_s
 
             if no_new_text_received and not background_request_period_passed:
+                logger.debug("No new text received, skipping request.")
                 continue
 
             # This is used for executing tool calls.
@@ -163,6 +164,7 @@ class Streaming:
                     model="gpt-4o",
                 ):
                     if delta["type"] == "tool_call":
+                        logger.debug("Received toolcall delta: " + delta["text"])
                         # Add the 'tool call' to the list of running tasks.
                         self.context.add_tool_call_request(
                             delta["tool_call"]["function"]["name"],  # type: ignore
@@ -175,13 +177,17 @@ class Streaming:
                         )
                         self.active_tool_call_tasks.append(task)
                     elif delta["type"] == "text":
+                        logger.debug("Received text delta: " + delta["text"])
                         await self.tts_text_queue.put(delta["text"])
                         self.context.add_text(
                             delta["text"], "assistant", timestamp=datetime.now()
                         )
 
-                    if not self.tts_text_queue.empty():
+                    if not self.transcribed_text_queue.empty():
                         # Interrupt the response if new text was received.
+                        logger.debug(
+                            "Interrupting response due to new text in tts_text_queue."
+                        )
                         break
             else:
                 logger.info("Performing `user query` request")
@@ -194,6 +200,7 @@ class Streaming:
                     model="gpt-4o",
                 ):
                     if delta["type"] == "tool_call":
+                        logger.debug("Received toolcall delta: " + delta["text"])
                         # Add the 'tool call' to the list of running tasks.
                         self.context.add_tool_call_request(
                             delta["tool_call"]["function"]["name"],  # type: ignore
@@ -206,10 +213,17 @@ class Streaming:
                         )
                         self.active_tool_call_tasks.append(task)
                     elif delta["type"] == "text":
+                        logger.debug("Received text delta: " + delta["text"])
+                        self.context.add_text(
+                            delta["text"], "assistant", timestamp=datetime.now()
+                        )
                         await self.tts_text_queue.put(delta["text"])
 
-                    if not self.tts_text_queue.empty():
+                    if not self.transcribed_text_queue.empty():
                         # Interrupt the response if new text was received.
+                        logger.debug(
+                            "Interrupting response due to new text in tts_text_queue."
+                        )
                         break
 
     async def generate_speech_loop(self):
