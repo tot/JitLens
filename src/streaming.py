@@ -5,6 +5,7 @@ from openai import AsyncOpenAI
 
 from context import Context
 from streaming_openai_util import stream_openai_request_and_accumulate_toolcalls
+import websockets
 
 
 class Streaming:
@@ -12,6 +13,7 @@ class Streaming:
         self,
         context: Context,
         openai_client: AsyncOpenAI,
+        openai_realtime_transcription_ws: websockets.ClientConnection,
         silence_period_s: float = 5,
         thinking_period_s: float = 5,
     ):
@@ -31,6 +33,7 @@ class Streaming:
         self.last_text_received_timestamp = datetime.now()
         self.last_user_query_request_timestamp = datetime.now()
         self.last_background_request_timestamp = datetime.now()
+        self.openai_realtime_transcription_ws = openai_realtime_transcription_ws
 
     async def run(self):
         task1 = asyncio.create_task(self.process_audio_packets_loop())
@@ -42,17 +45,22 @@ class Streaming:
     async def join_remaining_tasks(self):
         await asyncio.gather(*self.active_tool_call_tasks)
 
-    async def enqueue_audio_packet(self, packet_data: bytes):
+    async def on_audio_packet_received(self, packet_data: bytes):
         await self.audio_transcription_queue.put(packet_data)
+
+    async def on_transcription_result_received(self, result: str):
+        await self.transcribed_text_queue.put(result)
 
     async def process_audio_packets_loop(self):
         while True:
             packet = await self.audio_transcription_queue.get()
-            # ws.send(packet)
-            # Send to OpenAI thing
-            # result = await ws.recv()
 
-            result = ...
+            # TODO: Put in the JSON format that OpenAI expects.
+            await self.openai_realtime_transcription_ws.send(packet)
+
+            # TODO: Parse from the OpenAI response.
+            # https://platform.openai.com/docs/guides/realtime-transcription#realtime-transcription-sessions
+            result = await self.openai_realtime_transcription_ws.recv()
 
             await self.transcribed_text_queue.put(result)
 
@@ -176,8 +184,3 @@ class Streaming:
 
             # send result to the speaker, so that it gets piped into the PC cable, and then it gets played
             # and the raybans will receive it
-
-
-openai_client = AsyncOpenAI()
-context = Context(log_dir="./context", openai_client=openai_client)
-streaming = Streaming(context, openai_client)

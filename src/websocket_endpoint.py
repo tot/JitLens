@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import datetime
-import json
 import os
 from io import BytesIO
 
@@ -32,25 +31,6 @@ def base64_to_pil(base64_string):
 OPENAI_WS_URL = "wss://api.openai.com/v1/realtime?intent=transcription"
 
 
-async def connect_to_openai():
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "OpenAI-Beta": "realtime=v1",
-    }
-
-    async with websockets.connect(OPENAI_WS_URL, extra_headers=headers) as ws:
-        print("Connected to OpenAI WebSocket.")
-
-        try:
-            while True:
-                message = await ws.recv()  # Wait for messages from OpenAI
-                data = json.loads(message)
-                print("Received event:", json.dumps(data, indent=2))
-
-        except websockets.exceptions.ConnectionClosed:
-            print("WebSocket connection closed.")
-
-
 app = FastAPI()
 
 openai_client = AsyncOpenAI()
@@ -63,34 +43,33 @@ async def websocket_endpoint(websocket: WebSocket):
     log_dir = f"./context_{ctx_counter}/"
     ctx_counter += 1
     context = Context(log_dir, openai_client)
-    streaming = Streaming(context, openai_client)
-    await websocket.accept()
-    streaming_task = asyncio.create_task(streaming.run())
-    try:
-        buffer = b""
-        while True:
-            buffer += await websocket.receive_bytes()
-            if b"\n" in buffer:
-                messages = buffer.split(b"\n")
-                for message_string in messages:
-                    try:
-                        message = json.loads(message_string)
 
-                        match message["type"]:
-                            case "audio_packet":
-                                await streaming.enqueue_audio_packet(message["data"])
-                            case "image_packet":
-                                image = base64_to_pil(message["data"])
-                                if image is None:
-                                    raise ValueError("Invalid image.")
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "OpenAI-Beta": "realtime=v1",
+    }
 
-                                context.add_image(image, datetime.datetime.now())
-                            case _:
-                                print("Wrong type")
-                    except json.JSONDecodeError:
-                        pass
+    async with websockets.connect(OPENAI_WS_URL, extra_headers=headers) as ws:
+        streaming = Streaming(
+            context, openai_client, openai_realtime_transcription_ws=ws
+        )
+        await websocket.accept()
+        streaming_task = asyncio.create_task(streaming.run())
+        try:
+            while True:
+                message = await websocket.receive_json()
+                match message["type"]:
+                    case "audio_packet":
+                        await streaming.on_audio_packet_received(message["data"])
+                    case "image_packet":
+                        image = base64_to_pil(message["data"])
+                        if image is None:
+                            raise ValueError("Invalid image.")
 
-    except WebSocketDisconnect:
-        print("WebSocket disconnected")
-        await streaming.join_remaining_tasks()
-        streaming_task.cancel()
+                        context.add_image(image, datetime.datetime.now())
+                    case _:
+                        print("Wrong type")
+        except WebSocketDisconnect:
+            print("WebSocket disconnected")
+            await streaming.join_remaining_tasks()
+            streaming_task.cancel()
