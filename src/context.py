@@ -154,12 +154,12 @@ class Context:
         )
         self.content_id_counter += 1
 
-    def get_latest_context(self):
+    def get_latest_finegrained_context(self):
         end_time = datetime.datetime.now()
         start_time = end_time - datetime.timedelta(seconds=self.prompt_history_length_s)
-        return self._construct_finegrained_prompt(start_time, end_time)
+        return self._construct_finegrained_context(start_time, end_time)
 
-    def _construct_finegrained_prompt(
+    def _construct_finegrained_context(
         self, start_time: datetime.datetime, end_time: datetime.datetime
     ):
         if (
