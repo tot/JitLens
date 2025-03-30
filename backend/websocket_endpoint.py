@@ -51,6 +51,7 @@ async def websocket_endpoint(websocket: WebSocket):
             message = await websocket.receive_json()
             match message["type"]:
                 case "audio_packet":
+                    print("Audio packet received")
                     await streaming.on_audio_packet_received(message["data"])
                 case "image_packet":
                     image = base64_to_pil(message["data"])

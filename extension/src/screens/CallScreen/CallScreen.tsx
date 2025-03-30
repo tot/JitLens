@@ -9,12 +9,6 @@ const CallScreen = () => {
     const wsRef = useRef<WebSocket | null>(null);
     const audioContainerRef = useRef<HTMLDivElement>(null);
     const processorRef = useRef<ScriptProcessorNode | null>(null);
-    const wavConfigRef = useRef<{
-        sampleRate: number;
-        bitsPerSample: number;
-        channels: number;
-    } | null>(null);
-    const headerAcknowledgedRef = useRef<boolean>(false);
 
     const connectWebSocket = () => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -25,28 +19,13 @@ const CallScreen = () => {
 
         ws.onopen = () => {
             addLog("WebSocket connection established");
-            // Resend WAV header if we have it
-            if (wavConfigRef.current) {
-                ws.send(
-                    JSON.stringify({
-                        type: "wav_header",
-                        ...wavConfigRef.current,
-                    })
-                );
-                addLog("Resent WAV header configuration");
-            }
         };
 
         ws.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data);
-                if (message.type === "wav_header_ack") {
-                    headerAcknowledgedRef.current = true;
-                    addLog("WAV header acknowledged by server");
-                } else if (message.type === "error") {
+                if (message.type === "error") {
                     addLog(`Error from server: ${message.message}`);
-                } else if (message.type === "chunk_saved") {
-                    addLog(`Server saved audio chunk: ${message.filename}`);
                 }
             } catch (e) {
                 addLog(`Message from server: ${event.data}`);
@@ -55,7 +34,6 @@ const CallScreen = () => {
 
         ws.onclose = () => {
             addLog("WebSocket connection closed, attempting to reconnect...");
-            headerAcknowledgedRef.current = false;
             setTimeout(connectWebSocket, 1000);
         };
 
@@ -79,6 +57,49 @@ const CallScreen = () => {
         if (audioContainerRef.current) {
             audioContainerRef.current.scrollTop = audioContainerRef.current.scrollHeight;
         }
+    };
+
+    const createWavHeader = (
+        dataLength: number,
+        sampleRate: number,
+        channels: number,
+        bitsPerSample: number
+    ) => {
+        const buffer = new ArrayBuffer(44);
+        const view = new DataView(buffer);
+
+        // RIFF chunk descriptor
+        view.setUint8(0, "R".charCodeAt(0));
+        view.setUint8(1, "I".charCodeAt(0));
+        view.setUint8(2, "F".charCodeAt(0));
+        view.setUint8(3, "F".charCodeAt(0));
+        view.setUint32(4, 36 + dataLength, true);
+        view.setUint8(8, "W".charCodeAt(0));
+        view.setUint8(9, "A".charCodeAt(0));
+        view.setUint8(10, "V".charCodeAt(0));
+        view.setUint8(11, "E".charCodeAt(0));
+
+        // fmt sub-chunk
+        view.setUint8(12, "f".charCodeAt(0));
+        view.setUint8(13, "m".charCodeAt(0));
+        view.setUint8(14, "t".charCodeAt(0));
+        view.setUint8(15, " ".charCodeAt(0));
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); // PCM format
+        view.setUint16(22, channels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * channels * (bitsPerSample / 8), true);
+        view.setUint16(32, channels * (bitsPerSample / 8), true);
+        view.setUint16(34, bitsPerSample, true);
+
+        // data sub-chunk
+        view.setUint8(36, "d".charCodeAt(0));
+        view.setUint8(37, "a".charCodeAt(0));
+        view.setUint8(38, "t".charCodeAt(0));
+        view.setUint8(39, "a".charCodeAt(0));
+        view.setUint32(40, dataLength, true);
+
+        return buffer;
     };
 
     const startCapture = async () => {
@@ -108,109 +129,68 @@ const CallScreen = () => {
                     setStream(capturedStream);
                     addLog("Successfully captured audio stream");
 
-                    // Create audio context with original sample rate for better quality
                     const audioContext = new AudioContext();
                     const source = audioContext.createMediaStreamSource(capturedStream);
-
-                    // Log the actual sample rate
                     addLog(`Audio context sample rate: ${audioContext.sampleRate}Hz`);
 
-                    // Create a ScriptProcessorNode with larger buffer for better quality
                     const processor = audioContext.createScriptProcessor(4096, 1, 1);
                     processorRef.current = processor;
 
-                    // Create analyzer for audio levels
                     const analyzer = audioContext.createAnalyser();
                     analyzer.fftSize = 2048;
                     analyzer.smoothingTimeConstant = 0.3;
 
-                    // Connect the audio chain: source -> processor -> analyzer
                     source.connect(processor);
                     processor.connect(audioContext.destination);
                     source.connect(analyzer);
 
-                    // Store WAV configuration
-                    wavConfigRef.current = {
-                        sampleRate: audioContext.sampleRate,
-                        bitsPerSample: 16,
-                        channels: 1,
-                    };
-
-                    // Send WAV header information and wait for confirmation
-                    if (wsRef.current?.readyState === WebSocket.OPEN) {
-                        wsRef.current.send(
-                            JSON.stringify({
-                                type: "wav_header",
-                                ...wavConfigRef.current,
-                            })
-                        );
-                        addLog("Sent WAV header configuration");
-                    } else {
-                        addLog("Error: WebSocket not connected");
-                        return;
-                    }
-
-                    let isFirstChunk = true;
-                    // Handle audio processing
                     processor.onaudioprocess = (e) => {
-                        if (
-                            wsRef.current?.readyState === WebSocket.OPEN &&
-                            headerAcknowledgedRef.current
-                        ) {
-                            // Get PCM data from input channel
+                        if (wsRef.current?.readyState === WebSocket.OPEN) {
                             const inputData = e.inputBuffer.getChannelData(0);
-
-                            // Convert Float32Array to Int16Array (PCM16) with better scaling
                             const pcm16Data = new Int16Array(inputData.length);
+
+                            // Convert to 16-bit PCM with dithering
                             for (let i = 0; i < inputData.length; i++) {
-                                // Add dither noise to reduce quantization effects
                                 const dither = (Math.random() * 2 - 1) * 0.0001;
                                 const sample = Math.max(-1, Math.min(1, inputData[i] + dither));
-                                // Scale to 16-bit range with proper rounding
                                 pcm16Data[i] = Math.round(sample * 32767);
                             }
 
-                            const timestamp = Date.now();
-
-                            // Send chunk info first
-                            wsRef.current.send(
-                                JSON.stringify({
-                                    type: "wav_chunk_info",
-                                    timestamp,
-                                    size: pcm16Data.length * 2, // 2 bytes per sample
-                                    isFirstChunk,
-                                })
+                            // Create WAV header
+                            const wavHeader = createWavHeader(
+                                pcm16Data.byteLength,
+                                audioContext.sampleRate,
+                                1,
+                                16
                             );
 
-                            // Then send the actual audio data
-                            wsRef.current.send(pcm16Data.buffer);
+                            // Combine header and audio data
+                            const fullWavData = new Uint8Array(
+                                wavHeader.byteLength + pcm16Data.byteLength
+                            );
+                            fullWavData.set(new Uint8Array(wavHeader), 0);
+                            fullWavData.set(new Uint8Array(pcm16Data.buffer), wavHeader.byteLength);
 
-                            if (isFirstChunk) {
-                                addLog("Started sending audio chunks");
-                                isFirstChunk = false;
-                            }
-                        } else if (!headerAcknowledgedRef.current) {
-                            // Resend WAV header if not acknowledged
-                            if (
-                                wsRef.current?.readyState === WebSocket.OPEN &&
-                                wavConfigRef.current
-                            ) {
-                                wsRef.current.send(
-                                    JSON.stringify({
-                                        type: "wav_header",
-                                        ...wavConfigRef.current,
-                                    })
-                                );
-                                addLog("Resending WAV header configuration...");
-                            }
+                            // Convert to base64
+                            const base64Data = btoa(
+                                String.fromCharCode.apply(null, Array.from(fullWavData))
+                            );
+
+                            // Send the audio packet
+                            wsRef.current.send(
+                                JSON.stringify({
+                                    type: "audio_packet",
+                                    timestamp: Date.now(),
+                                    data: `data:audio/wav;base64,${base64Data}`,
+                                })
+                            );
                         }
                     };
 
-                    // Log audio levels to verify capture is working
+                    // Log audio levels
                     const dataArray = new Uint8Array(analyzer.frequencyBinCount);
                     const checkAudio = () => {
                         analyzer.getByteTimeDomainData(dataArray);
-                        // Calculate RMS value for better level representation
                         let sum = 0;
                         for (let i = 0; i < dataArray.length; i++) {
                             const amplitude = (dataArray[i] - 128) / 128;
@@ -221,10 +201,8 @@ const CallScreen = () => {
                     };
                     const audioLevelInterval = setInterval(checkAudio, 1000);
 
-                    // Store processor reference for cleanup
                     setMediaRecorder(processor as any);
 
-                    // Clean up the interval when stopping
                     return () => {
                         clearInterval(audioLevelInterval);
                     };
@@ -255,8 +233,6 @@ const CallScreen = () => {
             setStream(null);
         }
         setMediaRecorder(null);
-        wavConfigRef.current = null;
-        headerAcknowledgedRef.current = false;
         addLog("Audio capture stopped");
     };
 
