@@ -84,7 +84,7 @@ const CallScreen = () => {
             setStream(capturedStream);
             addLog("Successfully captured audio stream");
 
-            const audioContext = new AudioContext();
+            const audioContext = new AudioContext({ sampleRate: 48000 });
             const source = audioContext.createMediaStreamSource(capturedStream);
             addLog(`Audio context sample rate: ${audioContext.sampleRate}Hz`);
 

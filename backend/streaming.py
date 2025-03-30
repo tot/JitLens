@@ -146,11 +146,12 @@ class Streaming:
             # https://platform.openai.com/docs/guides/realtime-transcription#realtime-transcription-sessions
             result = await self.openai_realtime_transcription_ws.recv()
 
-            logger.info("Received transcription result: " + repr(result))
+            # logger.info("Received transcription result: " + repr(result))
 
             data = json.loads(result)
             if data["type"] == "conversation.item.input_audio_transcription.delta":
-                await self.on_transcribed_text_received(data["delta"])
+                if data["delta"] != "":
+                    await self.on_transcribed_text_received(data["delta"])
 
     async def handle_tool_call(self, tool_call: dict):
         # Handles the tool call.
@@ -263,7 +264,13 @@ class Streaming:
                     self.last_user_query_request_timestamp = datetime.now()
                     async for delta in stream_openai_request_and_accumulate_toolcalls(
                         self.openai_client,
-                        self.context.get_latest_finegrained_context(),
+                        [
+                            {
+                                "role": "system",
+                                "content": "You will receive a stream of images and text representing what a user sees and says. Please respond to the user accordingly. If you do not receive any images, say 'NO IMAGES'.",
+                            },
+                            *self.context.get_latest_finegrained_context(),
+                        ],
                         model="gpt-4o",
                     ):
                         if delta["type"] == "tool_call":
@@ -360,10 +367,10 @@ class Streaming:
         while True:
             data = json.loads(await self.cartesia_ws.recv())
             if data["type"] == "chunk":
-                logger.debug("Received audio chunk")
+                # logger.debug("Received audio chunk")
                 self.pc_cable.write(base64.b64decode(data["data"]))
-            else:
-                logger.info("Data: " + repr(data))
+            # else:
+            #     logger.info("Data: " + repr(data))
 
 
 if __name__ == "__main__":
