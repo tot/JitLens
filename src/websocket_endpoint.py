@@ -5,8 +5,10 @@ import json
 import os
 from io import BytesIO
 
+import websockets
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, websockets
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from openai import AsyncOpenAI
 from PIL import Image
 
 from context import Context
@@ -49,14 +51,21 @@ async def connect_to_openai():
             print("WebSocket connection closed.")
 
 
-curr_stream = Streaming()
-
 app = FastAPI()
+
+openai_client = AsyncOpenAI()
+ctx_counter = 0
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, context: Context):
+async def websocket_endpoint(websocket: WebSocket):
+    global ctx_counter
+    log_dir = f"./context_{ctx_counter}/"
+    ctx_counter += 1
+    context = Context(log_dir, openai_client)
+    streaming = Streaming(context, openai_client)
     await websocket.accept()
+    streaming_task = asyncio.create_task(streaming.run())
     try:
         buffer = b""
         while True:
@@ -69,17 +78,13 @@ async def websocket_endpoint(websocket: WebSocket, context: Context):
 
                         match message["type"]:
                             case "audio_packet":
-                                curr_stream.enqueue_audio_packet(message["data"])
+                                await streaming.enqueue_audio_packet(message["data"])
                             case "image_packet":
-                                conv_image=base64_to_pil(
-                                        message["data"], datetime.datetime.now()
-                                    )
-                                if conv_image:
-                                    context.add_image(
-                                        conv_image
-                                    )
-                                else:
-                                    print("Failed image conversion")
+                                image = base64_to_pil(message["data"])
+                                if image is None:
+                                    raise ValueError("Invalid image.")
+
+                                context.add_image(image, datetime.datetime.now())
                             case _:
                                 print("Wrong type")
                     except json.JSONDecodeError:
@@ -87,9 +92,5 @@ async def websocket_endpoint(websocket: WebSocket, context: Context):
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")
-
-
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task()
-    asyncio.create_task(connect_to_openai())
+        await streaming.join_remaining_tasks()
+        streaming_task.cancel()
