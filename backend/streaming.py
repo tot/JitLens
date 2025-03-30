@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 from datetime import datetime
 from loguru import logger
@@ -63,32 +64,70 @@ class Streaming:
 
     async def on_audio_packet_received(self, packet_data: bytes):
         logger.debug("Received audio packet")
-        await self.audio_transcription_queue.put(packet_data)
+        assert self.openai_realtime_transcription_ws
+        await self.openai_realtime_transcription_ws.send(
+            json.dumps(
+                {
+                    "type": "input_audio_buffer.append",
+                    "audio": base64.b64encode(packet_data).decode("utf-8"),
+                }
+            )
+        )
+        await self.openai_realtime_transcription_ws.send(
+            json.dumps({"type": "input_audio_buffer.commit"})
+        )
 
     async def on_transcribed_text_received(self, text: str):
         logger.debug("Received transcribed text: " + text)
-        await self.transcribed_text_queue.put(text)
+        await self.transcribed_text_queue.put({"text": text})
 
     async def transcribe_loop(self):
         logger.info("Starting transcription loop")
 
         assert self.openai_realtime_transcription_ws
 
-        while True:
-            packet = await self.audio_transcription_queue.get()
+        await self.openai_realtime_transcription_ws.send(
+            json.dumps(
+                {
+                    "type": "transcription_session.update",
+                    "session": {
+                        "input_audio_format": "pcm16",
+                        "input_audio_transcription": {
+                            "model": "gpt-4o-transcribe",
+                            "prompt": "",
+                            "language": "en",
+                        },
+                        "turn_detection": {
+                            "type": "server_vad",
+                            "threshold": 0.5,
+                            "prefix_padding_ms": 300,
+                            "silence_duration_ms": 500,
+                        },
+                        "input_audio_noise_reduction": {"type": "near_field"},
+                        "include": [
+                            # "item.input_audio_transcription.logprobs",
+                        ],
+                    },
+                }
+            )
+        )
 
-            await self.openai_realtime_transcription_ws.send({
-                "type": "input_audio_buffer.append",
-                "audio": packet
-            })
+        while True:
+            # while not self.audio_transcription_queue.empty():
+            #     packet = await self.audio_transcription_queue.get()
+
+            #     logger.debug("Received packet")
 
             # TODO: Parse from the OpenAI response.
             # https://platform.openai.com/docs/guides/realtime-transcription#realtime-transcription-sessions
             result = await self.openai_realtime_transcription_ws.recv()
+
+            # logger.debug("Received result: " + repr(result))
+
             data = json.loads(result)
             res_data = ""
-            if data["type"] == "response.output_text.delta":
-                await self.on_transcription_result_received(data["delta"])
+            if data["type"] == "conversation.item.input_audio_transcription.delta":
+                await self.on_transcribed_text_received(data["delta"])
 
             await self.transcribed_text_queue.put(res_data)
 
@@ -114,6 +153,9 @@ class Streaming:
                     transcribed_text_chunk = await asyncio.wait_for(
                         self.transcribed_text_queue.get(), timeout=self.silence_period_s
                     )
+                    if transcribed_text_chunk == "":
+                        continue
+
                     self.context.add_text(
                         transcribed_text_chunk["text"],
                         role="user",
@@ -122,7 +164,7 @@ class Streaming:
                     self.last_text_received_timestamp = datetime.now()
 
                     logger.debug(
-                        "Added text to context: " + transcribed_text_chunk["text"]
+                        "Added text to context: " + repr(transcribed_text_chunk["text"])
                     )
 
                 continue
