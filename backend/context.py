@@ -303,7 +303,7 @@ class Context:
 
         prompt: list[ChatCompletionMessageParam] = []
         for item in self.content:
-            if not (
+            if item["type"] == "image" and not (
                 item["timestamp"] >= start_time.timestamp()
                 and item["timestamp"] <= end_time.timestamp()
             ):
