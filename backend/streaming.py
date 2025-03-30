@@ -221,6 +221,8 @@ class Streaming:
             if background_request_period_passed and no_new_text_received:
                 logger.info("Performing `background` request")
 
+                text = ""
+
                 # Do a "background" request.
                 self.last_background_request_timestamp = datetime.now()
                 async for delta in stream_openai_request_and_accumulate_toolcalls(
@@ -249,7 +251,8 @@ class Streaming:
                         )
                         self.active_tool_call_tasks.append(task)
                     elif delta["type"] == "text":
-                        logger.debug("Received text delta: " + delta["text"])
+                        # logger.debug("Received text delta: " + delta["text"])
+                        text += delta["text"]
                         await self.tts_text_queue.put(delta["text"])
                         self.context.add_text(
                             delta["text"], "assistant", timestamp=datetime.now()
@@ -261,8 +264,12 @@ class Streaming:
                             "Interrupting response due to new text in tts_text_queue."
                         )
                         break
+
+                logger.info("Message content: " + repr(text))
             else:
                 logger.info("Performing `user query` request")
+
+                text = ""
 
                 # Do a "user query" request (handling the new text as if it's a user query).
                 try:
@@ -292,7 +299,8 @@ class Streaming:
                             )
                             self.active_tool_call_tasks.append(task)
                         elif delta["type"] == "text":
-                            logger.debug("Received text delta: " + delta["text"])
+                            # logger.debug("Received text delta: " + delta["text"])
+                            text += delta["text"]
                             self.context.add_text(
                                 delta["text"], "assistant", timestamp=datetime.now()
                             )
@@ -304,6 +312,8 @@ class Streaming:
                                 "Interrupting response due to new text in tts_text_queue."
                             )
                             break
+
+                    logger.info("Message content: " + repr(text))
                 except Exception as e:
                     logger.error(
                         "Error in user query request: "

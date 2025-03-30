@@ -19,6 +19,9 @@ app = FastAPI()
 openai_client = AsyncOpenAI()
 ctx_counter = 0
 
+THINKING_PERIOD_S = 40
+SILENCE_PERIOD_S = 1
+
 # context = None
 # streaming = None
 
@@ -33,7 +36,10 @@ async def websocket_endpoint(websocket: WebSocket):
     indexing_task = asyncio.create_task(context._index_images())
     # if streaming is None:
     streaming = Streaming(
-        context, openai_client, silence_period_s=1, thinking_period_s=15
+        context,
+        openai_client,
+        silence_period_s=SILENCE_PERIOD_S,
+        thinking_period_s=THINKING_PERIOD_S,
     )
     streaming_task = asyncio.create_task(streaming.run())
 
