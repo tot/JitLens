@@ -10,7 +10,7 @@ const CallScreen = () => {
     const audioContainerRef = useRef<HTMLDivElement>(null);
     const processorRef = useRef<ScriptProcessorNode | null>(null);
 
-    const connectWebSocket = () => {
+    const connectWebSocket = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             return;
         }
@@ -38,10 +38,17 @@ const CallScreen = () => {
         };
 
         wsRef.current = ws;
-    };
+    }, []);
 
     useEffect(() => {
         connectWebSocket();
+
+        return () => {
+            wsRef.current?.close();
+        };
+    }, [connectWebSocket]);
+
+    useEffect(() => {
         return () => {
             if (wsRef.current) {
                 wsRef.current.close();
@@ -204,7 +211,7 @@ const CallScreen = () => {
                 if (response.success) {
                     wsRef?.current?.send(
                         JSON.stringify({
-                            type: "image",
+                            type: "image_packet",
                             data: response.screenshot,
                             timestamp: Date.now(),
                         })

@@ -16,8 +16,4 @@ document.body.appendChild(root);
 
 console.log("JitLens content script loaded");
 
-ReactDOM.createRoot(root).render(
-    <React.StrictMode>
-        <CallScreen />
-    </React.StrictMode>
-);
+ReactDOM.createRoot(root).render(<CallScreen />);

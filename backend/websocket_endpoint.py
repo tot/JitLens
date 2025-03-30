@@ -5,14 +5,13 @@ import os
 from io import BytesIO
 
 from dotenv import load_dotenv
+
+load_dotenv()
+from context import Context
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from openai import AsyncOpenAI
 from PIL import Image
-
-from context import Context
 from streaming import Streaming
-
-load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
