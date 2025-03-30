@@ -1,0 +1,7 @@
+@use "@styles/theme.scss" as theme;
+
+.default {
+    font-size: 0.825rem;
+    font-weight: 500;
+    color: theme.$text-label;
+}

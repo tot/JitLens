@@ -1,0 +1,21 @@
+.settings-screen-drawer {
+    position: absolute;
+    top: 2.5rem;
+    left: 0;
+    width: 100%;
+    height: calc(100% - 2.5rem);
+    background: white;
+    border-radius: 1rem 1rem 0 0;
+    z-index: 5;
+}
+
+.dim-overlay {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(5px);
+    z-index: 2;
+}

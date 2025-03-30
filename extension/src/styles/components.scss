@@ -1,0 +1,29 @@
+.baseButton {
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.7rem;
+    width: 100%;
+    border: none;
+    font-weight: 600;
+    box-shadow: inset 0 2px 2px rgba(255, 255, 255, 0.1);
+    transition: filter 0.1s;
+
+    &:hover {
+        filter: brightness(0.9);
+    }
+
+    &:active {
+        filter: brightness(0.9);
+    }
+}
+
+.buttonRounded {
+    @extend .baseButton;
+    border-radius: 2rem;
+}
+
+.buttonDefault {
+    @extend .buttonRounded;
+    border-radius: 0.5rem;
+    background: #5b58ec;
+}
