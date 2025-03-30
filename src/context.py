@@ -102,31 +102,31 @@ class Context:
         )
         self.content_id_counter += 1
 
-    def add_speech(self, speech: str, timestamp: datetime.datetime):
+    def add_text(self, text: str, role: str, timestamp: datetime.datetime):
         self.content.append(
             {
                 "type": "text",
-                "role": "user",
-                "text": speech,
+                "role": role,
+                "text": text,
                 "id": self.content_id_counter,
                 "timestamp": timestamp.timestamp(),
             }
         )
         self.content_id_counter += 1
 
-    def add_function_call_request(
+    def add_tool_call_request(
         self,
         name: str,
-        parameters: dict,
+        arguments: dict,
         tool_call_id: str,
         timestamp: datetime.datetime,
     ):
         self.content.append(
             {
-                "type": "function_call_request",
+                "type": "tool_call_request",
                 "role": "assistant",
                 "name": name,
-                "parameters": parameters,
+                "arguments": arguments,
                 "id": self.content_id_counter,
                 "tool_call_id": tool_call_id,
                 "timestamp": timestamp.timestamp(),
@@ -134,7 +134,7 @@ class Context:
         )
         self.content_id_counter += 1
 
-    def add_function_call_response(
+    def add_tool_call_result(
         self,
         tool_call_id: str,
         response_structured: dict,
@@ -143,8 +143,8 @@ class Context:
     ):
         self.content.append(
             {
-                "type": "function_call_response",
-                "role": "assistant",
+                "type": "tool_call_response",
+                "role": "tool",
                 "response_structured": response_structured,
                 "response_formatted": response_formatted,
                 "id": self.content_id_counter,
@@ -158,6 +158,9 @@ class Context:
         end_time = datetime.datetime.now()
         start_time = end_time - datetime.timedelta(seconds=self.prompt_history_length_s)
         return self._construct_finegrained_context(start_time, end_time)
+
+    async def recall(self, query: str):
+        pass
 
     def _construct_finegrained_context(
         self, start_time: datetime.datetime, end_time: datetime.datetime
