@@ -15,7 +15,7 @@ const CallScreen = () => {
             return;
         }
 
-        const ws = new WebSocket("ws://localhost:3000/ws");
+        const ws = new WebSocket("ws://localhost:8000/ws");
 
         ws.onopen = () => {
             addLog("WebSocket connection established");

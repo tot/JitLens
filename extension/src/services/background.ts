@@ -22,7 +22,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         captureScreenshot()
             .then((screenshot) => {
                 // Send screenshot to WebSocket server
-                const ws = new WebSocket("ws://localhost:3000/ws");
+                const ws = new WebSocket("ws://localhost:8000/ws");
                 ws.onopen = () => {
                     ws.send(
                         JSON.stringify({
