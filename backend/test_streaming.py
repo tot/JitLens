@@ -1,15 +1,13 @@
 import asyncio
-import sys
 import wave
 
-import openai
 import dotenv
+import openai
+
+dotenv.load_dotenv()
 
 from context import Context
 from streaming import Streaming
-import loguru
-
-dotenv.load_dotenv()
 
 
 async def main():

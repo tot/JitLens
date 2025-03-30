@@ -91,6 +91,8 @@ const CallScreen = () => {
             const source = audioContext.createMediaStreamSource(capturedStream);
             addLog(`Audio context sample rate: ${audioContext.sampleRate}Hz`);
 
+            console.log("Sample rate:", audioContext.sampleRate);
+
             const processor = audioContext.createScriptProcessor(4096, 1, 1);
             processorRef.current = processor;
 

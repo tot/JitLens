@@ -5,6 +5,8 @@ from datetime import datetime
 import os
 from loguru import logger
 
+import numpy as np
+import scipy.signal as sps
 import websockets
 from openai import AsyncOpenAI
 
@@ -51,6 +53,7 @@ class Streaming:
         )
         self.openai_realtime_transcription_ws = None
         self.pc_cable = VBcablePlayer(input_sample_rate=CARTESIA_SAMPLE_RATE)
+        self.buffer = bytes()
         self.cartesia_ws = None
 
     async def run(self):
@@ -78,7 +81,20 @@ class Streaming:
     async def on_audio_packet_received(self, packet_data: bytes):
         # logger.debug("Received audio packet")
         assert self.openai_realtime_transcription_ws
-        data = base64.b64encode(packet_data).decode("utf-8")
+        self.buffer += packet_data
+        if len(self.buffer) < 48000 * 2:
+            return
+
+        # The buffer is 48 KHz. We want 24 KHz.
+        data = np.frombuffer(self.buffer, dtype=np.int16)
+        num_samples = round(len(data) / 2)
+        data = sps.resample(data, num_samples)
+        # Ensure the data remains in 16-bit range.
+        data = np.clip(data, -32768, 32767).astype(np.int16)
+        buffer = data.tobytes()
+
+        data = base64.b64encode(buffer).decode("utf-8")
+        self.buffer = b""
         await self.openai_realtime_transcription_ws.send(
             json.dumps({"type": "input_audio_buffer.append", "audio": data})
         )
