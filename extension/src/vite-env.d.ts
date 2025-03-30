@@ -1,7 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-    readonly VITE_NOTION_INTEGRATION: string;
+    readonly PY_BACKEND_URL: string;
+    readonly HONO_BACKEND_URL: string;
 }
 
 interface ImportMeta {

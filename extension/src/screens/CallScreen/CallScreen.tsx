@@ -15,7 +15,7 @@ const CallScreen = () => {
             return;
         }
 
-        const ws = new WebSocket("ws://localhost:3000/ws");
+        const ws = new WebSocket(import.meta.env.HONO_BACKEND_URL);
 
         ws.onopen = () => {
             addLog("WebSocket connection established");
