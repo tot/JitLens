@@ -2,6 +2,7 @@ import asyncio
 import base64
 import datetime
 import json
+import io
 import os
 
 import openai
@@ -10,7 +11,10 @@ from openai.types.chat import ChatCompletionMessageParam
 
 
 def _image_to_base64(image: PIL.Image.Image):
-    return "data:image/png;base64," + base64.b64encode(image.tobytes()).decode("utf-8")
+    io_save = io.BytesIO()
+    image.save(io_save, format="PNG")
+    io_save.seek(0)
+    return "data:image/png;base64," + base64.b64encode(io_save.read()).decode("utf-8")
 
 
 class Context:

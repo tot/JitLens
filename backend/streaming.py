@@ -3,6 +3,7 @@ import base64
 import json
 from datetime import datetime
 import os
+import traceback
 from loguru import logger
 
 import numpy as np
@@ -258,38 +259,46 @@ class Streaming:
                 logger.info("Performing `user query` request")
 
                 # Do a "user query" request (handling the new text as if it's a user query).
-                self.last_user_query_request_timestamp = datetime.now()
-                async for delta in stream_openai_request_and_accumulate_toolcalls(
-                    self.openai_client,
-                    self.context.get_latest_finegrained_context(),
-                    model="gpt-4o",
-                ):
-                    if delta["type"] == "tool_call":
-                        logger.debug("Received toolcall delta: " + delta["text"])
-                        # Add the 'tool call' to the list of running tasks.
-                        self.context.add_tool_call_request(
-                            delta["tool_call"]["function"]["name"],  # type: ignore
-                            delta["tool_call"]["function"]["arguments"],  # type: ignore
-                            delta["tool_call"]["id"],  # type: ignore
-                            timestamp=datetime.now(),
-                        )
-                        task = event_loop.create_task(
-                            self.handle_tool_call(delta["tool_call"])  # type: ignore
-                        )
-                        self.active_tool_call_tasks.append(task)
-                    elif delta["type"] == "text":
-                        logger.debug("Received text delta: " + delta["text"])
-                        self.context.add_text(
-                            delta["text"], "assistant", timestamp=datetime.now()
-                        )
-                        await self.tts_text_queue.put(delta["text"])
+                try:
+                    self.last_user_query_request_timestamp = datetime.now()
+                    async for delta in stream_openai_request_and_accumulate_toolcalls(
+                        self.openai_client,
+                        self.context.get_latest_finegrained_context(),
+                        model="gpt-4o",
+                    ):
+                        if delta["type"] == "tool_call":
+                            logger.debug("Received toolcall delta: " + delta["text"])
+                            # Add the 'tool call' to the list of running tasks.
+                            self.context.add_tool_call_request(
+                                delta["tool_call"]["function"]["name"],  # type: ignore
+                                delta["tool_call"]["function"]["arguments"],  # type: ignore
+                                delta["tool_call"]["id"],  # type: ignore
+                                timestamp=datetime.now(),
+                            )
+                            task = event_loop.create_task(
+                                self.handle_tool_call(delta["tool_call"])  # type: ignore
+                            )
+                            self.active_tool_call_tasks.append(task)
+                        elif delta["type"] == "text":
+                            logger.debug("Received text delta: " + delta["text"])
+                            self.context.add_text(
+                                delta["text"], "assistant", timestamp=datetime.now()
+                            )
+                            await self.tts_text_queue.put(delta["text"])
 
-                    if not self.transcribed_text_queue.empty():
-                        # Interrupt the response if new text was received.
-                        logger.debug(
-                            "Interrupting response due to new text in tts_text_queue."
-                        )
-                        break
+                        if not self.transcribed_text_queue.empty():
+                            # Interrupt the response if new text was received.
+                            logger.debug(
+                                "Interrupting response due to new text in tts_text_queue."
+                            )
+                            break
+                except Exception as e:
+                    logger.error(
+                        "Error in user query request: "
+                        + repr(e)
+                        + "\n\n"
+                        + traceback.format_exc()
+                    )
 
     async def synthesize_speech_loop(self):
         logger.info("Starting speech generation loop")
