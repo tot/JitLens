@@ -78,11 +78,13 @@ class Streaming:
             None, None, None
         )
 
-    async def on_audio_packet_received(self, packet_data: bytes):
+    async def on_audio_packet_received(self, packet_data: bytes, sound_level: float):
         # logger.debug("Received audio packet")
         assert self.openai_realtime_transcription_ws
         self.buffer += packet_data
-        if len(self.buffer) < 48000 * 2:
+        if len(self.buffer) < 48000 * 2 or (
+            sound_level < 6 and len(self.buffer) < 48000 * 10
+        ):
             return
 
         # The buffer is 48 KHz. We want 24 KHz.
@@ -118,7 +120,8 @@ class Streaming:
                     "session": {
                         "input_audio_format": "pcm16",
                         "input_audio_transcription": {
-                            "model": "gpt-4o-transcribe",
+                            "model": "whisper-1",
+                            # "model": "gpt-4o-transcribe",
                             "prompt": "",
                             "language": "en",
                         },
