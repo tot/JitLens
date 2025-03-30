@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket
 import httpx
 import tempfile
+import os
 
 load_dotenv()
 
