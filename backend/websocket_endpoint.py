@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from context import Context
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from loguru import logger
 from openai import AsyncOpenAI
 from PIL import Image
 from streaming import Streaming
@@ -50,10 +51,13 @@ async def websocket_endpoint(websocket: WebSocket):
             message = await websocket.receive_json()
             match message["type"]:
                 case "audio_packet":
-                    print("Audio packet received")
+                    logger.debug("Received audio packet")
                     await streaming.on_audio_packet_received(message["data"])
                 case "image_packet":
-                    image = base64_to_pil(message["data"])
+                    logger.debug("Received image packet")
+                    image = base64_to_pil(
+                        message["data"][len("data:image/png;base64,") :]
+                    )
                     if image is None:
                         raise ValueError("Invalid image.")
 
