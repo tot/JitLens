@@ -2,6 +2,7 @@ venv
 scratch
 .env
 **/__pycache__
+context_*
 
 **/.DS_Store
 

@@ -19,17 +19,25 @@ app = FastAPI()
 openai_client = AsyncOpenAI()
 ctx_counter = 0
 
+context = None
+streaming = None
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    global ctx_counter
+    global ctx_counter, context, streaming
     log_dir = f"./context_{ctx_counter}/"
     ctx_counter += 1
-    context = Context(log_dir, openai_client)
+    if context is None:
+        context = Context(log_dir, openai_client)
+        indexing_task = asyncio.create_task(context._index_images())
+    if streaming is None:
+        streaming = Streaming(
+            context, openai_client, silence_period_s=1, thinking_period_s=15
+        )
+        streaming_task = asyncio.create_task(streaming.run())
 
-    streaming = Streaming(context, openai_client)
     await websocket.accept()
-    streaming_task = asyncio.create_task(streaming.run())
     await asyncio.sleep(1.0)
     t0 = time.time()
     try:
@@ -52,5 +60,5 @@ async def websocket_endpoint(websocket: WebSocket):
                     print("Wrong type")
     except WebSocketDisconnect:
         print("WebSocket disconnected")
-        await streaming.close()
-        streaming_task.cancel()
+        # await streaming.close()
+        # streaming_task.cancel()

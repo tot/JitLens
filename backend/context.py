@@ -5,6 +5,7 @@ import json
 import io
 import os
 
+from loguru import logger
 import openai
 import PIL.Image
 from openai.types.chat import ChatCompletionMessageParam
@@ -33,6 +34,16 @@ class Context:
         self.openai_client = openai_client
         self.prompt_history_length_s = prompt_history_length_s
         self.max_finegrained_prompt_length_s = max_finegrained_prompt_length_s
+
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+    async def run(self):
+        tasks = [
+            asyncio.create_task(self._index_images()),
+        ]
+        await asyncio.gather(*tasks)
+        logger.info("Context indexing thread started.")
 
     async def _create_caption(self, image: PIL.Image.Image) -> str:
         response = await self.openai_client.chat.completions.create(
@@ -63,16 +74,23 @@ class Context:
         return caption
 
     async def _index_images(self):
+        logger.info("Starting image indexing thread...")
         while True:
-            await self.indexing_queue.get()
-            while self.indexing_queue:
+            if self.indexing_queue.empty():
+                await asyncio.sleep(0.1)
+                continue
+
+            while not self.indexing_queue.empty():
+                logger.info("Indexing image...")
                 item = await self.indexing_queue.get()
                 item["image"].save(f"{self.log_dir}/{item['id']}.png")
 
-                if not os.path.exists(f"{self.log_dir}/{item['index']}_caption.txt"):
+                if not os.path.exists(f"{self.log_dir}/{item['id']}_caption.txt"):
                     caption = await self._create_caption(item["image"])
                     with open(f"{self.log_dir}/{item['id']}_caption.txt", "w") as f:
                         f.write(caption)
+
+                    logger.info("Created caption")
 
     def add_image(self, image: PIL.Image.Image, timestamp: datetime.datetime):
         self.indexing_queue.put_nowait(

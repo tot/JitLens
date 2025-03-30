@@ -27,7 +27,7 @@ class Streaming:
         context: Context,
         openai_client: AsyncOpenAI,
         silence_period_s: float = 5,
-        thinking_period_s: float = 5,
+        thinking_period_s: float = 15,
     ):
         self.inflight_request_buffer = {}
         self.inflight_request_counter = 0
@@ -199,16 +199,21 @@ class Streaming:
                 self.last_user_query_request_timestamp
                 >= self.last_text_received_timestamp
             )
-            background_request_period_passed = (
+            time_since_background_request = (
                 datetime.now()
                 - max(
                     self.last_user_query_request_timestamp,
                     self.last_background_request_timestamp,
                 )
-            ).total_seconds() < self.thinking_period_s
-
+            ).total_seconds()
+            background_request_period_passed = (
+                time_since_background_request > self.thinking_period_s
+            )
             if no_new_text_received and not background_request_period_passed:
-                logger.debug("No new text received, skipping request.")
+                logger.debug(
+                    "No new text received, skipping request. Time since background request: "
+                    + str(time_since_background_request)
+                )
                 continue
 
             # This is used for executing tool calls.
@@ -225,7 +230,7 @@ class Streaming:
                     + [
                         {
                             "role": "user",
-                            "content": "Please now check if any of your background tasks could be applied here.",
+                            "content": "Please describe briefly what you see.",
                         }
                     ],
                     model="gpt-4o",
