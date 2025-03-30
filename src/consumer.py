@@ -1,9 +1,11 @@
 import asyncio
-import wave
-from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket
-import httpx
+import os
 import tempfile
+import wave
+
+import httpx
+from dotenv import load_dotenv
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 load_dotenv()
 
@@ -14,6 +16,7 @@ app = FastAPI()
 
 # Dictionary to store active WebSocket connections
 active_connections = {}
+
 
 # WebSocket endpoint to handle connections
 @app.websocket("/ws/{client_id}")
@@ -31,12 +34,13 @@ async def websocket_endpoint(client_id: int, websocket: WebSocket):
     except WebSocketDisconnect:
         del active_connections[client_id]
 
+
 async def handle_transcription(client_id: int):
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://api.openai.com/v1/audio/transcriptions",
             headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
-            json={"client_id": client_id, "action": "start_transcription"}
+            json={"client_id": client_id, "action": "start_transcription"},
         )
 
         if response.status_code == 200:
