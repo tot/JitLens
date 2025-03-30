@@ -41,8 +41,10 @@ class Streaming:
     async def process_audio_packets_loop(self):
         while True:
             packet = await self.audio_transcription_queue.get()
-
+            # ws.send(packet)
             # Send to OpenAI thing
+            # result = await ws.recv()
+
             result = ...
 
             await self.transcribed_text_queue.put(result)
