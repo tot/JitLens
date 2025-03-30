@@ -5,6 +5,13 @@ import json
 from openai import AsyncOpenAI
 
 from context import Context
+from dotenv import load_dotenv
+import os
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import websockets
+import base64
+from io import BytesIO
+from PIL import Image
 
 
 def _valid_json(text: str):
@@ -62,6 +69,9 @@ async def _stream_openai_request_and_accumulate_toolcalls(
             yield {"type": "text", "content": delta.content}
 
 
+load_dotenv()
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 class Streaming:
     def __init__(
         self,
@@ -96,9 +106,9 @@ class Streaming:
     async def process_audio_packets_loop(self):
         while True:
             packet = await self.audio_transcription_queue.get()
-
+            ws.send(packet)
             # Send to OpenAI thing
-            result = ...
+            result = await ws.recv()
 
             await self.transcribed_text_queue.put(result)
 
@@ -222,3 +232,70 @@ class Streaming:
 
             # send result to the speaker, so that it gets piped into the PC cable, and then it gets played
             # and the raybans will receive it
+
+
+def base64_to_pil(base64_string):
+    try:
+        image_data = base64.b64decode(base64_string)
+        image = Image.open(BytesIO(image_data))
+        return image
+    except Exception as e:
+        print(f"Error converting base64 to PIL: {e}")
+        return None
+
+
+OPENAI_WS_URL = "wss://api.openai.com/v1/realtime?intent=transcription"
+
+async def connect_to_openai():
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "OpenAI-Beta": "realtime=v1"
+    }
+
+    async with websockets.connect(OPENAI_WS_URL, extra_headers=headers) as ws:
+        print("Connected to OpenAI WebSocket.")
+        
+        try:
+            while True:
+                message = await ws.recv()  # Wait for messages from OpenAI
+                data = json.loads(message)
+                print("Received event:", json.dumps(data, indent=2))
+        
+        except websockets.exceptions.ConnectionClosed:
+            print("WebSocket connection closed.")
+
+curr_stream = Streaming()
+
+app = FastAPI()
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, context: Context):
+    await websocket.accept()
+    try:
+        buffer = b''
+        while True:
+            buffer += await websocket.receive_bytes()
+            if b'\n' in buffer:
+                messages = buffer.split(b'\n')
+                for message_string in messages:
+                    try:
+                        message = json.loads(message_string)
+
+                        match message['type']:
+                            case 'audio_packet':
+                                curr_stream.enqueue_audio_packet(message['data'])
+                            case 'image_packet':
+                                context.add_image(base64_to_pil(message['data'], datetime.datetime.now()))
+                            case _:
+                                print("Wrong type")
+                    except json.JSONDecodeError:
+                        pass
+
+    except WebSocketDisconnect:
+        print("WebSocket disconnected")
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task()
+    asyncio.create_task(connect_to_openai())
+
