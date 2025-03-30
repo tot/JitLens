@@ -1,7 +1,86 @@
+let capture;
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "takeScreenshot") {
         captureScreenshot().then((screenshot) => sendResponse({ success: true, screenshot }));
         return true; // Keep the message channel open for async response
+    } else if (message.type === "startCapture") {
+        chrome.tabCapture.capture(
+            {
+                audio: true,
+                video: false,
+                audioConstraints: {
+                    mandatory: {
+                        chromeMediaSource: "tab",
+                    },
+                },
+            },
+            async (capturedStream) => {
+                if (!capturedStream) {
+                    sendResponse({ success: false, error: "Failed to capture tab audio" });
+                    return;
+                }
+
+                const audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamSource(capturedStream);
+
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                const analyzer = audioContext.createAnalyser();
+                analyzer.fftSize = 2048;
+                analyzer.smoothingTimeConstant = 0.3;
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+                source.connect(analyzer);
+
+                processor.onaudioprocess = (e) => {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    const pcm16Data = new Int16Array(inputData.length);
+
+                    // Convert to 16-bit PCM with dithering
+                    for (let i = 0; i < inputData.length; i++) {
+                        const dither = (Math.random() * 2 - 1) * 0.0001;
+                        const sample = Math.max(-1, Math.min(1, inputData[i] + dither));
+                        pcm16Data[i] = Math.round(sample * 32767);
+                    }
+
+                    // Combine header and audio data
+                    const fullWavData = new Uint8Array(pcm16Data.byteLength);
+                    fullWavData.set(new Uint8Array(pcm16Data.buffer), 0);
+
+                    // Convert to base64
+                    const base64Data = btoa(
+                        String.fromCharCode.apply(null, Array.from(fullWavData))
+                    );
+
+                    chrome.runtime.sendMessage({
+                        type: "audio_packet",
+                        data: base64Data,
+                        timestamp: Date.now(),
+                    });
+                };
+
+                // Log audio levels
+                const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+                const checkAudio = () => {
+                    analyzer.getByteTimeDomainData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        const amplitude = (dataArray[i] - 128) / 128;
+                        sum += amplitude * amplitude;
+                    }
+                    const rms = Math.sqrt(sum / dataArray.length);
+                    addLog(`Audio Level: ${(rms * 100).toFixed(2)}`);
+                };
+                const audioLevelInterval = setInterval(checkAudio, 1000);
+
+                setMediaRecorder(processor as any);
+
+                return () => {
+                    clearInterval(audioLevelInterval);
+                };
+            }
+        );
     }
 });
 
@@ -50,7 +129,7 @@ async function captureScreenshot(): Promise<string> {
             throw new Error("Invalid screenshot format");
         }
 
-        return dataUrl;
+        return dataUrl.slice("data:image/png;base64,".length);
     } catch (error) {
         console.error("Screenshot capture error:", error);
         throw error;

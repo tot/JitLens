@@ -76,15 +76,11 @@ class Streaming:
         )
 
     async def on_audio_packet_received(self, packet_data: bytes):
-        logger.debug("Received audio packet")
+        # logger.debug("Received audio packet")
         assert self.openai_realtime_transcription_ws
+        data = base64.b64encode(packet_data).decode("utf-8")
         await self.openai_realtime_transcription_ws.send(
-            json.dumps(
-                {
-                    "type": "input_audio_buffer.append",
-                    "audio": base64.b64encode(packet_data).decode("utf-8"),
-                }
-            )
+            json.dumps({"type": "input_audio_buffer.append", "audio": data})
         )
         await self.openai_realtime_transcription_ws.send(
             json.dumps({"type": "input_audio_buffer.commit"})
@@ -129,6 +125,8 @@ class Streaming:
             # TODO: Parse from the OpenAI response.
             # https://platform.openai.com/docs/guides/realtime-transcription#realtime-transcription-sessions
             result = await self.openai_realtime_transcription_ws.recv()
+
+            logger.info("Received transcription result: " + repr(result))
 
             data = json.loads(result)
             if data["type"] == "conversation.item.input_audio_transcription.delta":

@@ -27,7 +27,7 @@ export const manifest: ManifestV3Export = {
     ],
     content_scripts: [
         {
-            matches: ["*://*.messenger.com/groupcall/*"],
+            matches: ["*://*.paulgraham.com/*"],
             js: ["src/contentScript.tsx"],
         },
     ],

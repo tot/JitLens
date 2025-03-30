@@ -68,99 +68,91 @@ const CallScreen = () => {
 
     const startCapture = async () => {
         try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (!tab.id || !tab.url) return;
+            // const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            // if (!tab.id || !tab.url) return;
 
             addLog("Starting audio capture...");
 
-            chrome.tabCapture.capture(
-                {
-                    audio: true,
-                    video: false,
-                    audioConstraints: {
-                        mandatory: {
-                            chromeMediaSource: "tab",
-                        },
-                    },
-                },
-                async (capturedStream) => {
-                    if (!capturedStream) {
-                        setError("Failed to capture tab audio");
-                        addLog("Error: Failed to capture tab audio");
-                        return;
+            const capturedStream = await navigator.mediaDevices.getDisplayMedia({
+                audio: true,
+            });
+            if (!capturedStream) {
+                setError("Failed to capture tab audio");
+                addLog("Error: Failed to capture tab audio");
+                return;
+            }
+
+            console.log("AudioTracks:", capturedStream.getAudioTracks());
+
+            setStream(capturedStream);
+            addLog("Successfully captured audio stream");
+
+            const audioContext = new AudioContext();
+            const source = audioContext.createMediaStreamSource(capturedStream);
+            addLog(`Audio context sample rate: ${audioContext.sampleRate}Hz`);
+
+            const processor = audioContext.createScriptProcessor(4096, 1, 1);
+            processorRef.current = processor;
+
+            const analyzer = audioContext.createAnalyser();
+            analyzer.fftSize = 2048;
+            analyzer.smoothingTimeConstant = 0.3;
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+            source.connect(analyzer);
+
+            processor.onaudioprocess = (e) => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    const pcm16Data = new Int16Array(inputData.length);
+
+                    // Convert to 16-bit PCM with dithering
+                    for (let i = 0; i < inputData.length; i++) {
+                        const dither = (Math.random() * 2 - 1) * 0.0001;
+                        const sample = Math.max(-1, Math.min(1, inputData[i] + dither));
+                        pcm16Data[i] = Math.round(sample * 32767);
                     }
 
-                    setStream(capturedStream);
-                    addLog("Successfully captured audio stream");
+                    // Combine header and audio data
+                    const fullWavData = new Uint8Array(pcm16Data.byteLength);
+                    fullWavData.set(new Uint8Array(pcm16Data.buffer), 0);
 
-                    const audioContext = new AudioContext();
-                    const source = audioContext.createMediaStreamSource(capturedStream);
-                    addLog(`Audio context sample rate: ${audioContext.sampleRate}Hz`);
+                    // Convert to base64
+                    const base64Data = btoa(
+                        String.fromCharCode.apply(null, Array.from(fullWavData))
+                    );
 
-                    const processor = audioContext.createScriptProcessor(4096, 1, 1);
-                    processorRef.current = processor;
-
-                    const analyzer = audioContext.createAnalyser();
-                    analyzer.fftSize = 2048;
-                    analyzer.smoothingTimeConstant = 0.3;
-
-                    source.connect(processor);
-                    processor.connect(audioContext.destination);
-                    source.connect(analyzer);
-
-                    processor.onaudioprocess = (e) => {
-                        if (wsRef.current?.readyState === WebSocket.OPEN) {
-                            const inputData = e.inputBuffer.getChannelData(0);
-                            const pcm16Data = new Int16Array(inputData.length);
-
-                            // Convert to 16-bit PCM with dithering
-                            for (let i = 0; i < inputData.length; i++) {
-                                const dither = (Math.random() * 2 - 1) * 0.0001;
-                                const sample = Math.max(-1, Math.min(1, inputData[i] + dither));
-                                pcm16Data[i] = Math.round(sample * 32767);
-                            }
-
-                            // Combine header and audio data
-                            const fullWavData = new Uint8Array(pcm16Data.byteLength);
-                            fullWavData.set(new Uint8Array(pcm16Data.buffer), 0);
-
-                            // Convert to base64
-                            const base64Data = btoa(
-                                String.fromCharCode.apply(null, Array.from(fullWavData))
-                            );
-
-                            // Send the audio packet
-                            wsRef.current.send(
-                                JSON.stringify({
-                                    type: "audio_packet",
-                                    timestamp: Date.now(),
-                                    data: `data:audio/wav;base64,${base64Data}`,
-                                })
-                            );
-                        }
-                    };
-
-                    // Log audio levels
-                    const dataArray = new Uint8Array(analyzer.frequencyBinCount);
-                    const checkAudio = () => {
-                        analyzer.getByteTimeDomainData(dataArray);
-                        let sum = 0;
-                        for (let i = 0; i < dataArray.length; i++) {
-                            const amplitude = (dataArray[i] - 128) / 128;
-                            sum += amplitude * amplitude;
-                        }
-                        const rms = Math.sqrt(sum / dataArray.length);
-                        addLog(`Audio Level: ${(rms * 100).toFixed(2)}`);
-                    };
-                    const audioLevelInterval = setInterval(checkAudio, 1000);
-
-                    setMediaRecorder(processor as any);
-
-                    return () => {
-                        clearInterval(audioLevelInterval);
-                    };
+                    // Send the audio packet
+                    wsRef.current.send(
+                        JSON.stringify({
+                            type: "audio_packet",
+                            timestamp: Date.now(),
+                            data: base64Data,
+                        })
+                    );
                 }
-            );
+            };
+
+            // Log audio levels
+            const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+            const checkAudio = () => {
+                analyzer.getByteTimeDomainData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                    const amplitude = (dataArray[i] - 128) / 128;
+                    sum += amplitude * amplitude;
+                }
+                const rms = Math.sqrt(sum / dataArray.length);
+                addLog(`Audio Level: ${(rms * 100).toFixed(2)}`);
+            };
+            const audioLevelInterval = setInterval(checkAudio, 1000);
+
+            setMediaRecorder(processor as any);
+
+            return () => {
+                clearInterval(audioLevelInterval);
+            };
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : "An unknown error occurred";
             setError(errorMessage);
