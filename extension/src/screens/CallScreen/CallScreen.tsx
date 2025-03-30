@@ -1,5 +1,5 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./CallScreen.module.scss";
-import { useState, useRef, useEffect } from "react";
 
 const CallScreen = () => {
     const [stream, setStream] = useState<MediaStream | null>(null);
@@ -52,55 +52,12 @@ const CallScreen = () => {
         };
     }, [stream]);
 
-    const addLog = (message: string) => {
+    const addLog = useCallback((message: string) => {
         setLogs((prevLogs) => [...prevLogs, `[${new Date().toLocaleTimeString()}] ${message}`]);
         if (audioContainerRef.current) {
             audioContainerRef.current.scrollTop = audioContainerRef.current.scrollHeight;
         }
-    };
-
-    const createWavHeader = (
-        dataLength: number,
-        sampleRate: number,
-        channels: number,
-        bitsPerSample: number
-    ) => {
-        const buffer = new ArrayBuffer(44);
-        const view = new DataView(buffer);
-
-        // RIFF chunk descriptor
-        view.setUint8(0, "R".charCodeAt(0));
-        view.setUint8(1, "I".charCodeAt(0));
-        view.setUint8(2, "F".charCodeAt(0));
-        view.setUint8(3, "F".charCodeAt(0));
-        view.setUint32(4, 36 + dataLength, true);
-        view.setUint8(8, "W".charCodeAt(0));
-        view.setUint8(9, "A".charCodeAt(0));
-        view.setUint8(10, "V".charCodeAt(0));
-        view.setUint8(11, "E".charCodeAt(0));
-
-        // fmt sub-chunk
-        view.setUint8(12, "f".charCodeAt(0));
-        view.setUint8(13, "m".charCodeAt(0));
-        view.setUint8(14, "t".charCodeAt(0));
-        view.setUint8(15, " ".charCodeAt(0));
-        view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true); // PCM format
-        view.setUint16(22, channels, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * channels * (bitsPerSample / 8), true);
-        view.setUint16(32, channels * (bitsPerSample / 8), true);
-        view.setUint16(34, bitsPerSample, true);
-
-        // data sub-chunk
-        view.setUint8(36, "d".charCodeAt(0));
-        view.setUint8(37, "a".charCodeAt(0));
-        view.setUint8(38, "t".charCodeAt(0));
-        view.setUint8(39, "a".charCodeAt(0));
-        view.setUint32(40, dataLength, true);
-
-        return buffer;
-    };
+    }, []);
 
     const startCapture = async () => {
         try {
@@ -156,20 +113,9 @@ const CallScreen = () => {
                                 pcm16Data[i] = Math.round(sample * 32767);
                             }
 
-                            // Create WAV header
-                            const wavHeader = createWavHeader(
-                                pcm16Data.byteLength,
-                                audioContext.sampleRate,
-                                1,
-                                16
-                            );
-
                             // Combine header and audio data
-                            const fullWavData = new Uint8Array(
-                                wavHeader.byteLength + pcm16Data.byteLength
-                            );
-                            fullWavData.set(new Uint8Array(wavHeader), 0);
-                            fullWavData.set(new Uint8Array(pcm16Data.buffer), wavHeader.byteLength);
+                            const fullWavData = new Uint8Array(pcm16Data.byteLength);
+                            fullWavData.set(new Uint8Array(pcm16Data.buffer), 0);
 
                             // Convert to base64
                             const base64Data = btoa(
@@ -244,7 +190,7 @@ const CallScreen = () => {
         setLogs([]);
     };
 
-    const takeScreenshot = async () => {
+    const takeAndSendScreenshot = useCallback(async () => {
         try {
             addLog("Taking screenshot...");
             chrome.runtime.sendMessage({ type: "takeScreenshot" }, (response) => {
@@ -256,6 +202,13 @@ const CallScreen = () => {
                 }
 
                 if (response.success) {
+                    wsRef?.current?.send(
+                        JSON.stringify({
+                            type: "image",
+                            data: response.screenshot,
+                            timestamp: Date.now(),
+                        })
+                    );
                     addLog("Screenshot captured and sent to server");
                 } else {
                     const error = response.error || "Failed to capture screenshot";
@@ -269,7 +222,14 @@ const CallScreen = () => {
             addLog(`Screenshot error: ${errorMessage}`);
             console.error("Error taking screenshot:", err);
         }
-    };
+    }, [addLog]);
+
+    useEffect(() => {
+        const intervalId = setInterval(takeAndSendScreenshot, 5000);
+        return () => {
+            clearInterval(intervalId);
+        };
+    });
 
     return (
         <div className={styles.screen}>
@@ -278,7 +238,7 @@ const CallScreen = () => {
                 <button onClick={stopCapture}>Stop Audio Capture</button>
                 <button onClick={clearError}>Clear Error</button>
                 <button onClick={clearLogs}>Clear Logs</button>
-                <button onClick={takeScreenshot}>Take Screenshot</button>
+                <button onClick={takeAndSendScreenshot}>Take Screenshot</button>
 
                 {stream && <div>Audio capture active!</div>}
                 {error && <div className={styles.error}>{error}</div>}
